@@ -36,13 +36,13 @@ class MapsAlive
         return $asHtml ? html_escape($text) : $text;
     }
 
-    public static function getItemFileUrl($item, $derivative, $fileIndex)
+    public static function getItemFileUrl($item, $derivativeSize, $fileIndex)
     {
         $url = '';
         $file = $item->getFile($fileIndex);
         if (!empty($file) && $file->hasThumbnail())
         {
-            $url = $file->getWebPath($derivative);
+            $url = $file->getWebPath($derivativeSize);
 
             $supportedImageMimeTypes = self::supportedImageMimeTypes();
 

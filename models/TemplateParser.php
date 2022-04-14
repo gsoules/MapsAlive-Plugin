@@ -24,22 +24,22 @@ class TemplateParser
             $remaining = $row;
             while (true)
             {
-                // Look for a substitution in the remaining text on this row.
+                // Look for a specifier in the remaining text on this row.
                 $start = strpos($remaining, '${');
                 if ($start === false)
                 {
-                    // There's no substitution. Keep the rest of the row text and go onto the next.
+                    // There's no specifier. Keep the rest of the row text and go onto the next.
                     $html .= $remaining;
                     break;
                 }
                 $end = strpos($remaining, '}');
                 $end += 1;
 
-                // Get the substitution including the ${...} wrapper.
-                $substitution = substr($remaining, $start, $end - $start);
+                // Get the specifier including the ${...} wrapper.
+                $specifier = substr($remaining, $start, $end - $start);
 
-                // Replace the entire substitution with a data value.
-                $replacement = $this->replaceSubstitution($items, $substitution);
+                // Replace the entire specifier with a data value.
+                $replacement = $this->replaceSpecifierWithValue($items, $specifier);
                 $html .= substr($remaining, 0, $start);
                 $html .= $replacement;
 
@@ -83,146 +83,84 @@ class TemplateParser
         return true;
     }
 
-    protected function parseSubstitution($substitution, $convertElementNamesToIds)
-    {
-        // This method converts a substitution value that is within ${...} to either use an element name or element Id.
-
-        $content = substr($substitution, 2, strlen($substitution) - 3);
-        $parts = array_map('trim', explode(',', $content));
-        $argsCount = count($parts);
-
-        if ($argsCount == 1 && $parts[0] == "")
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('No substitution provided.'));
-
-        $firstArg = $parts[0];
-
-        if ($firstArg == 'file-url')
-        {
-            if ($argsCount < 2)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('The file-url specifier requires a size argument.'));
-
-            $secondArg = $parts[1];
-            if (!in_array($secondArg, ['thumbnail', 'fullsize', 'original']))
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file size. Use thumbnail, fullsize, or original.', $secondArg));
-
-            if ($argsCount == 2)
-                return $substitution;
-
-            $itemIndex = $parts[2];
-            if (intval($itemIndex) < 1)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
-
-            if ($argsCount == 3)
-                return $substitution;
-
-            $fileIndex = $parts[3];
-            if (intval($fileIndex) < 1)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file index. The index must be an integer >= 1', $fileIndex));
-
-            if ($argsCount > 4)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('Too many arguments specified for file-url'));
-
-            return $substitution;
-        }
-
-        if ($firstArg == 'item-url')
-        {
-            if ($argsCount == 1)
-                return $substitution;
-
-            $itemIndex = $parts[1];
-            if (intval($itemIndex) < 1)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index.The index must be an integer >= 1', $itemIndex));
-
-            if ($argsCount > 2)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('Too many arguments specified for item-url'));
-
-            return $substitution;
-        }
-
-        if ($argsCount == 2)
-        {
-            $itemIndex = $parts[1];
-            if (!$this->isIndex($itemIndex))
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index.The index must be an integer >= 1', $itemIndex));
-        }
-
-        if ($argsCount > 2)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Too many arguments specified for element name'));
-
-        if ($convertElementNamesToIds)
-        {
-            $elementId = MapsAlive::getElementIdForElementName($firstArg);
-            if ($elementId == 0)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $firstArg));
-
-            $parts[0] = $elementId;
-        }
-        else
-        {
-            $elementName = MapsAlive::getElementNameForElementId($firstArg);
-            $parts[0] = $elementName;
-        }
-
-        return '${' . implode(',', $parts) . '}';
-    }
-
-    protected function isIndex($value)
+    protected function isValidIndex($value)
     {
         if (!is_numeric($value))
             return false;
         return intval($value) >= 1;
     }
 
+    protected function parseSpecifier($specifier)
+    {
+        // Get the content of the specifier, the part that's between the curly braces, and split it into its parts.
+        $content = substr($specifier, 2, strlen($specifier) - 3);
+        $parts = array_map('trim', explode(',', $content));
+        return $parts;
+    }
+
     protected function parseTemplateRow($row, $convertElementNamesToIds)
     {
-        // This method converts a text template row that contains elements names to a json template row that
-        // contains element Ids. It also converts a json template row that contains element Ids to a text
-        // template row that contains element names.
+        // This method translates the specifiers in a template row from one form to another. When used to save
+        // a template on the configuration page, it translates element names to element Ids. The result can then
+        // be saved in the datebase as JSON. When used to read a template from the database, it translates element
+        // Ids to element names so that the template can be displayed on the configuration page.
 
-        $remaining = $row;
-        $parsed = "";
-        $done = false;
+        // Parse the row's text from left to right until no more specifiers are found.
+        // Initially no text has been parsed and the remaining text is the entire row.
 
-        while (!$done)
+        $remainingText = $row;
+        $parsedText = "";
+
+        while (true)
         {
-            $start = strpos($remaining, '${');
+            $start = strpos($remainingText, '${');
             if ($start === false)
             {
-                $done = true;
-                $parsed .= $remaining;
+                // There's no specifier in the remaining text.
+                $parsedText .= $remainingText;
+                break;
             }
             else
             {
-                $end = strpos($remaining, '}');
+                // Find the end of the current specifier. It is required to be on the same line as the start.
+                $end = strpos($remainingText, '}');
                 if ($end === false)
-                {
                     throw new Omeka_Validate_Exception($this->errorPrefix() . __('Closing "}" is missing'));
-                }
-                else
-                {
-                    $end += 1;
-                    $substitution = substr($remaining, $start, $end - $start);
-                    $parsedSubstitution = $this->parseSubstitution($substitution, $convertElementNamesToIds);
-                    $parsed .= substr($remaining, 0, $start);
-                    $parsed .= $parsedSubstitution;
-                    $remaining = substr($remaining, $end);
-                }
+
+                // Get the complete specifier including its opening '${' and closing '}'.
+                $end += 1;
+                $specifier = substr($remainingText, $start, $end - $start);
+
+                // Translate an element name to an element Id or vice-versa.
+                $translatedSpecifier = $this->translateSpecifier($specifier, $convertElementNamesToIds);
+
+                // Replace the original specifier with the translated specifier.
+                $parsedText .= substr($remainingText, 0, $start);
+                $parsedText .= $translatedSpecifier;
+
+                // Reduce the remaining text to what's left after the just-translated specifier.
+                $remainingText = substr($remainingText, $end);
             }
         }
 
-        return $parsed;
+        return $parsedText;
     }
 
     protected function parseTextTemplateRows($templateName, $rows)
     {
+        // Initialize class variables used to keep track of which template and which row is being parsed.
         $this->parsedTextTemplates[$templateName] = [];
         $this->templateName = $templateName;
         $this->templateRowNumber = 0;
+
+        // Process each text template row to validate its specifiers and to translate element names to element Ids.
+        // Keep track of the row number solely for the purpose of reporting validation errors.
         foreach ($rows as $row)
         {
             $this->templateRowNumber += 1;
             $parsedRow = $this->parseTemplateRow($row, true);
+
+            // Add the parsed row to the template.
             $this->parsedTextTemplates[$templateName][] = $parsedRow;
         }
     }
@@ -232,68 +170,133 @@ class TemplateParser
         $templates = [];
         $rows = explode(PHP_EOL, $text);
 
+        // Loop over every row in the configuration page's templates text area.
+        // Identify which rows below to which templates and create an array of templates.
         foreach ($rows as $row)
         {
             $this->templatesRowNumber += 1;
 
+            // Skip blank rows.
             if (trim($row) == "")
                 continue;
 
+            // Start creating a new template if this row specifies "Template: <template-name>".
             if ($this->isTemplateDenitionRow($row))
             {
                 $templates[$this->templateName] = [];
                 continue;
             }
 
+            // Add the row to the rows for the current template.
             $templates[$this->templateName][] = $row;
         }
 
+        // Process each text template to validate its specifiers and to translate element names to element Ids.
         foreach ($templates as $templateName => $rows)
         {
             $this->parseTextTemplateRows($templateName, $rows);
         }
 
+        // Create a JSON array of templates to be stored in the database.
         return json_encode($this->parsedTextTemplates);
     }
 
-    protected function replaceSubstitution($items, $substitution)
+    protected function replaceSpecifierWithValue($items, $specifier)
     {
-        $content = substr($substitution, 2, strlen($substitution) - 3);
-        $parts = array_map('trim', explode(',', $content));
+        // This method replaces specifier with data values in response to a Live Data request.
+
+        $parts = $this->parseSpecifier($specifier);
         $argsCount = count($parts);
 
         $elementId = $parts[0];
 
         if ($elementId == 'file-url')
         {
-            $derivative = $parts[1];
+            $derivativeSize = $parts[1];
 
+            // When the item index is greater than the number of items specified, return an empty string.
             $itemIndex = $argsCount > 2 ? $parts[2] - 1 : 0;
             if ($itemIndex > count($items) - 1)
                 return "";
 
-            $fileIndex = $argsCount > 3 ? $parts[3] - 1 : 0;
+            // Get the specified item.
             $item = $items[$itemIndex];
-            $value = MapsAlive::getItemFileUrl($item, $derivative, $fileIndex);
+
+            // Get the file index or use 1 if no index was specified.
+            $fileIndex = $argsCount > 3 ? $parts[3] - 1 : 0;
+
+            // Get the URL for the specified file at the specified size. An empty string will be returned if the item
+            // does not have a file attachment, or does not have as many attachments as specified by the index.
+            $value = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
+            return $value;
+        }
+
+        // When the item index is greater than the number of items specified, return an empty string.
+        $itemIndex = $argsCount > 1 ? $parts[1] - 1 : 0;
+        if ($itemIndex > count($items) - 1)
+            return "";
+
+        // Get the item identified by specifier's item index.
+        $item = $items[$itemIndex];
+
+        // Get the requested value.
+        if ($elementId == 'item-url')
+            $value = WEB_ROOT . '/items/show/' . $item->id;
+        else
+            $value = MapsAlive::getElementTextFromElementId($item, $elementId);
+
+        return $value;
+    }
+
+    protected function translateSpecifier($specifier, $convertElementNamesToIds)
+    {
+        // This method translate an element name or element Id that is specified within ${...} to an element Id
+        // or element name respectively. If the specifier is file-url or item-url, this method only validates the
+        // specifier, but does no translation.
+
+        $parts = $this->parseSpecifier($specifier);
+        $argsCount = count($parts);
+
+        if ($argsCount == 1 && $parts[0] == "")
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('No specifier provided.'));
+
+        $firstArg = $parts[0];
+
+        if ($convertElementNamesToIds)
+        {
+            // Validate that the specifier has the correct number of arguments and that they are valid.
+            // If any problems are discovered, the validation method will throw a validation exception.
+            // For valid file-url and item-url specifiers, return the specifier as-is.
+            if ($firstArg == 'file-url')
+            {
+                $this->validateFileUrlSpecifier($parts);
+                return $specifier;
+            }
+
+            if ($firstArg == 'item-url')
+            {
+                $this->validateItemUrlSpecifier($parts);
+                return $specifier;
+            }
+
+            $this->validateElementSpecifier($parts);
+
+            // Replace the element name with its element Id.
+            $elementId = MapsAlive::getElementIdForElementName($firstArg);
+            if ($elementId == 0)
+                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $firstArg));
+
+            $parts[0] = $elementId;
         }
         else
         {
-            $itemIndex = $argsCount > 1 ? $parts[1] - 1 : 0;
-            if ($itemIndex > count($items) - 1)
-                return "";
-
-            $item = $items[$itemIndex];
-
-            if ($elementId == 'item-url')
-            {
-                $value = WEB_ROOT . '/items/show/' . $item->id;
-            }
-            else
-            {
-                $value = MapsAlive::getElementTextFromElementId($item, $elementId);
-            }
+            // Replace the element Id with the element name.
+            $elementName = MapsAlive::getElementNameForElementId($firstArg);
+            $parts[0] = $elementName;
         }
-        return $value;
+
+        // Reconstruct the specifier with the element name converted to an Id or vice-versa.
+        return '${' . implode(',', $parts) . '}';
     }
 
     public function unparseJsonTemplates($json)
@@ -315,5 +318,64 @@ class TemplateParser
         }
 
         return $text;
+    }
+
+    protected function validateFileUrlSpecifier($parts)
+    {
+        $argsCount = count($parts);
+
+        if ($argsCount < 2)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('The file-url specifier requires a size argument.'));
+
+        $secondArg = $parts[1];
+        if (!in_array($secondArg, ['thumbnail', 'fullsize', 'original']))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file size. Use thumbnail, fullsize, or original.', $secondArg));
+
+        if ($argsCount == 2)
+            return;
+
+        $itemIndex = $parts[2];
+        if (!$this->isValidIndex($itemIndex))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
+
+        if ($argsCount == 3)
+            return;
+
+        $fileIndex = $parts[3];
+        if (!$this->isValidIndex($fileIndex))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file index. The index must be an integer >= 1', $fileIndex));
+
+        if ($argsCount > 4)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for file-url has too many arguments. It should have 2 to 4.'));
+    }
+
+    protected function validateElementSpecifier($parts)
+    {
+        $argsCount = count($parts);
+
+        if ($argsCount == 2)
+        {
+            $itemIndex = $parts[1];
+            if (!$this->isValidIndex($itemIndex))
+                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
+        }
+
+        if ($argsCount > 2)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Element name specifier has too many arguments. It should have 1 or 2.'));
+    }
+
+    protected function validateItemUrlSpecifier($parts)
+    {
+        $argsCount = count($parts);
+
+        if ($argsCount == 1)
+            return;
+
+        $itemIndex = $parts[1];
+        if (!$this->isValidIndex($itemIndex))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
+
+        if ($argsCount > 2)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for item-url has too many arguments. It should have 1 or 2.'));
     }
 }
