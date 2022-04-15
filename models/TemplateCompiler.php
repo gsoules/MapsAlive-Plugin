@@ -69,18 +69,11 @@ class TemplateCompiler
         return json_encode($this->templates);
     }
 
-    public function emitTemplateLiveData($items, $templateName)
+    public function emitTemplateLiveData($items, $template)
     {
-        $raw =  get_option(MapsAliveConfig::OPTION_TEMPLATES);
-        $this->templates = json_decode($raw, true);
-
-        if (!array_key_exists($templateName, $this->templates))
-            return "No such template name '$templateName'";
-
-        $rows = $this->templates[$templateName];
-
         $html = "";
 
+        $rows = $template['rows'];
         foreach ($rows as $row)
         {
             $remaining = $row;
@@ -110,7 +103,7 @@ class TemplateCompiler
         }
 
         $data = new class {};
-        $data->id = "1100";
+        $data->id = "0";
         $data->html = $html;
 
         $response = json_encode($data);
@@ -259,6 +252,8 @@ class TemplateCompiler
 
             // Get the specified item.
             $item = $items[$itemIndex];
+            if ($item == null)
+                return "";
 
             // Get the file index or use 1 if no index was specified.
             $fileIndex = $argsCount > 3 ? $parts[3] - 1 : 0;
@@ -276,6 +271,8 @@ class TemplateCompiler
 
         // Get the item identified by specifier's item index.
         $item = $items[$itemIndex];
+        if ($item == null)
+            return "";
 
         // Get the requested value.
         if ($elementId == 'item-url')
@@ -348,30 +345,34 @@ class TemplateCompiler
         if ($this->templates == null)
             return "";
 
-        $textForAllTemplates = "";
+        $uncompiledText = "";
 
         // Loop over each template object and create a template definition followed by the template's content.
         foreach ($this->templates as $templateName => $template)
         {
             // Insert a blank line before each template definition except for the first one.
-            if (strlen($textForAllTemplates) > 0)
-                $textForAllTemplates .= PHP_EOL . PHP_EOL;
+            if (strlen($uncompiledText) > 0)
+                $uncompiledText .= PHP_EOL . PHP_EOL;
 
+            // Get the template's identifer element name from its element Id.
             $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
-            $textForAllTemplates .= "Template: $templateName, $elementName, {$template['format']}";
-            if ($template['repeats'])
-                $textForAllTemplates .= ", repeats";
 
+            // Form the template definition line.
+            $uncompiledText .= "Template: $templateName, $elementName, {$template['format']}";
+            if ($template['repeats'])
+                $uncompiledText .= ", repeats";
+
+            // Uncompile the template rows by converting specifier element Ids to element names.
             $rows = $template['rows'];
             foreach ($rows as $row)
             {
                 $compiling = false;
                 $parsedRow = $this->parseTemplateRow($row, $compiling);
-                $textForAllTemplates .= PHP_EOL . $parsedRow;
+                $uncompiledText .= PHP_EOL . $parsedRow;
             }
         }
 
-        return $textForAllTemplates;
+        return $uncompiledText;
     }
 
     protected function validateFileUrlSpecifier($args)

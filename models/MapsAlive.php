@@ -55,6 +55,25 @@ class MapsAlive
         return $url;
     }
 
+    public static function getItemForIdentifier($elementId, $identifier)
+    {
+        $params = array(
+            'search' => '',
+            'advanced' => array(
+                array(
+                    'element_id' => $elementId,
+                    'type' => 'is exactly',
+                    'terms' => $identifier)));
+
+        $records = get_records('Item', $params);
+
+        if (empty($records))
+            return null;
+
+        // Return the first or only item resulting from the search.
+        return $records[0];
+    }
+
     public static function supportedImageMimeTypes()
     {
         return array(
