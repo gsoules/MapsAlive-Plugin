@@ -7,7 +7,7 @@ class LiveDataRequest
 
     protected $templateName = "";
 
-    public function handleLiveDataRequest($requestType)
+    public function handleLiveDataRequest()
     {
         $itemIdentifiers = isset($_GET['items']) ? $_GET['items'] : 0;
 
@@ -35,11 +35,7 @@ class LiveDataRequest
         }
 
         $parser = new TemplateCompiler();
-
-        if ($requestType == self::REQUEST_TYPE_HTML)
-            $response = $parser->emitTemplateLiveDataHtml($items, $this->templateName);
-        else if ($requestType == self::REQUEST_TYPE_JSON)
-            $response = $parser->emitTemplateLiveDataJson($items, $this->templateName);
+        $response = $parser->emitTemplateLiveData($items, $this->templateName);
 
         return $response;
     }

@@ -2,33 +2,34 @@
 
 class TemplateCompiler
 {
-    protected $templateRowNumber;
-    protected $templatesRowNumber = 0;
+    protected $templateFormat = "";
+    protected $templateElementId = "";
     protected $templateName = "";
-    protected $parsedTextTemplates = [];
+    protected $templateRepeats = false;
+    protected $templateRowNumber;
+    protected $templates = [];
+    protected $templatesRowNumber = 0;
 
-    protected function compileTemplate($templateName, $rows)
+    protected function compileTemplate($templateName)
     {
         // Initialize class variables used to keep track of which template and which row is being parsed.
-        $this->parsedTextTemplates[$templateName] = [];
         $this->templateName = $templateName;
         $this->templateRowNumber = 0;
 
         // Process each template row to validate its specifiers and to translate element names to element Ids.
         // Keep track of the row number solely for the purpose of reporting validation errors.
+        $rows = $this->templates[$templateName]['rows'];
         foreach ($rows as $row)
         {
-            $this->templateRowNumber += 1;
             $parsedRow = $this->parseTemplateRow($row, true);
-
-            // Add the parsed row to the template.
-            $this->parsedTextTemplates[$templateName][] = $parsedRow;
+            $this->templates[$templateName]['rows'][$this->templateRowNumber] = $parsedRow;
+            $this->templateRowNumber += 1;
         }
     }
 
     public function compileTemplates($text)
     {
-        $templates = [];
+        $this->templates = [];
         $rows = explode(PHP_EOL, $text);
 
         // Loop over every row in the configuration page's templates text area.
@@ -44,36 +45,39 @@ class TemplateCompiler
             // Start creating a new template if this row specifies "Template: <template-name>".
             if ($this->isTemplateDefinitionRow($row))
             {
-                if (array_key_exists($this->templateName, $templates))
-                    throw new Omeka_Validate_Exception(__('Template name "%s" on line %s has already been defined.', $this->templateName, $this->templatesRowNumber));
-
-                $templates[$this->templateName] = [];
+                $this->templates[$this->templateName]['rows'] = [];
+                $this->templates[$this->templateName]['identifier'] = $this->templateElementId;
+                $this->templates[$this->templateName]['format'] = $this->templateFormat;
+                $this->templates[$this->templateName]['repeats'] = $this->templateRepeats;
                 continue;
             }
 
+            if (count($this->templates) == 0)
+                throw new Omeka_Validate_Exception(__('Unexpected content detected near line %s.', $this->templatesRowNumber));
+
             // Add the row to the rows for the current template.
-            $templates[$this->templateName][] = $row;
+            $this->templates[$this->templateName]['rows'][] = $row;
         }
 
         // Process each text template to validate its specifiers and to translate element names to element Ids.
-        foreach ($templates as $templateName => $rows)
+        foreach ($this->templates as $templateName => $template)
         {
-            $this->compileTemplate($templateName, $rows);
+            $this->compileTemplate($templateName);
         }
 
         // Create a JSON array of templates to be stored in the database.
-        return json_encode($this->parsedTextTemplates);
+        return json_encode($this->templates);
     }
 
-    public function emitTemplateLiveDataHtml($items, $templateName)
+    public function emitTemplateLiveData($items, $templateName)
     {
         $raw =  get_option(MapsAliveConfig::OPTION_TEMPLATES);
-        $templates = json_decode($raw, true);
+        $this->templates = json_decode($raw, true);
 
-        if (!array_key_exists($templateName, $templates))
+        if (!array_key_exists($templateName, $this->templates))
             return "No such template name '$templateName'";
 
-        $rows = $templates[$templateName];
+        $rows = $this->templates[$templateName];
 
         $html = "";
 
@@ -105,13 +109,6 @@ class TemplateCompiler
             }
         }
 
-        return $html;
-    }
-
-    public function emitTemplateLiveDataJson($items, $templateName)
-    {
-        $html = $this->emitTemplateLiveDataHtml($items, $templateName);
-
         $data = new class {};
         $data->id = "1100";
         $data->html = $html;
@@ -127,10 +124,23 @@ class TemplateCompiler
 
     protected function isTemplateDefinitionRow($row)
     {
-        $args = array_map('trim', explode(':', $row));
-        if (count($args) < 2 || strtolower($args[0]) != 'template')
+        $text = trim($row);
+
+        if (strtolower(substr($text, 0, 9)) != 'template:')
             return false;
-        $this->templateName = $args[1];
+
+        $restOfText = substr($text, 9);
+
+        $args = array_map('trim', explode(',', $restOfText));
+        $argsCount = count($args);
+
+        $this->templateName = $args[0];
+
+        if (array_key_exists($this->templateName, $this->templates))
+            throw new Omeka_Validate_Exception(__('Template "%s" on line %s has already been defined.', $this->templateName, $this->templatesRowNumber));
+
+        if ($argsCount < 3)
+            throw new Omeka_Validate_Exception(__('Template definition for "%s" on line %s is missing required arguments.', $this->templateName, $this->templatesRowNumber));
 
         if (!$this->validateDefinitionName($this->templateName))
             throw new Omeka_Validate_Exception(__('Template name "%s" on line %s must contain only alphanumeric characters and underscore.', $this->templateName, $this->templatesRowNumber));
@@ -141,6 +151,28 @@ class TemplateCompiler
         $index = strpos($this->templateName, ' ');
         if ($index !== false)
             $this->templateName = substr($this->templateName, 0, $index);
+
+        $elementName = $args[1];
+        $this->templateElementId = MapsAlive::getElementIdForElementName($elementName);
+        if ($this->templateElementId == 0)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $elementName));
+
+        $this->templateFormat = strtoupper($args[2]);
+        if ($this->templateFormat != "HTML" && $this->templateFormat != "JSON")
+            throw new Omeka_Validate_Exception(__('Invalid template format "%s" specified on line %s. Must be HTML or JSON.', $this->templateFormat, $this->templatesRowNumber));
+
+        $this->templateRepeats = false;
+        if ($argsCount == 4)
+        {
+            $repeats = $args[3];
+            if (strtolower($repeats) != "repeats")
+                throw new Omeka_Validate_Exception(__('Invalid repeats argument "%s" specified on line %s.', $repeats, $this->templatesRowNumber));
+            $this->templateRepeats = true;
+        }
+
+        if ($argsCount > 4)
+            throw new Omeka_Validate_Exception(__('Too many arguments specified for template "%s" on line %s.', $this->templateName, $this->templatesRowNumber));
+
         return true;
     }
 
@@ -312,20 +344,25 @@ class TemplateCompiler
     public function unComplileTemplates($json)
     {
         // Make sure the compiled templates are valid JSON.
-        $templates = json_decode($json, true);
-        if ($templates == null)
+        $this->templates = json_decode($json, true);
+        if ($this->templates == null)
             return "";
 
         $textForAllTemplates = "";
 
         // Loop over each template object and create a template definition followed by the template's content.
-        foreach ($templates as $templateName => $rows)
+        foreach ($this->templates as $templateName => $template)
         {
             // Insert a blank line before each template definition except for the first one.
             if (strlen($textForAllTemplates) > 0)
                 $textForAllTemplates .= PHP_EOL . PHP_EOL;
 
-            $textForAllTemplates .= "Template: $templateName";
+            $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
+            $textForAllTemplates .= "Template: $templateName, $elementName, {$template['format']}";
+            if ($template['repeats'])
+                $textForAllTemplates .= ", repeats";
+
+            $rows = $template['rows'];
             foreach ($rows as $row)
             {
                 $compiling = false;
