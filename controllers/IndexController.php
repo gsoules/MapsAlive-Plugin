@@ -14,6 +14,12 @@ class MapsAlive_IndexController extends Omeka_Controller_AbstractActionControlle
         $this->performAction(LiveDataRequest::REQUEST_TYPE_JSON);
     }
 
+    public function livedataAction()
+    {
+        $this->getResponse()->setHeader('Content-Type', 'application/json');
+        $this->performAction(LiveDataRequest::REQUEST_TYPE_JSON);
+    }
+
     private function performAction($requestType)
     {
         $this->getResponse()->setHeader('Access-Control-Allow-Origin', '*');

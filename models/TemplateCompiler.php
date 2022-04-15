@@ -115,8 +115,8 @@ class TemplateCompiler
         $data = new class {};
         $data->id = "1100";
         $data->html = $html;
-        $response = $data;
 
+        $response = json_encode($data);
         return $response;
     }
 
