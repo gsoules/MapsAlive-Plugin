@@ -1,8 +1,8 @@
 <?php
 
 // This class contains methods that directly access Omeka methods. In a Digital Archive installation,
-// these methods are provided by AvantCommon's ItemMetadata class, but since this MapsAlive plug is
-// designed to be used with no dependencies on other plugins, the methods need to exist here too.
+// these methods are provided by AvantCommon's ItemMetadata class, but since this MapsAlive plugin
+// is designed to be used with no dependencies on other plugins, the methods need to exist here too.
 
 class MapsAlive
 {

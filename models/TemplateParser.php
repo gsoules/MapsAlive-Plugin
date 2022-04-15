@@ -7,7 +7,7 @@ class TemplateParser
     protected $templateName = "";
     protected $parsedTextTemplates = [];
 
-    public function convertTemplateToHtml($items, $templateName)
+    public function emitTemplateLiveDataHtml($items, $templateName)
     {
         $raw =  get_option(MapsAliveConfig::OPTION_TEMPLATES);
         $templates = json_decode($raw, true);
@@ -39,7 +39,7 @@ class TemplateParser
                 $specifier = substr($remaining, $start, $end - $start);
 
                 // Replace the entire specifier with a data value.
-                $replacement = $this->replaceSpecifierWithValue($items, $specifier);
+                $replacement = $this->replaceSpecifierWithLiveData($items, $specifier);
                 $html .= substr($remaining, 0, $start);
                 $html .= $replacement;
 
@@ -50,9 +50,9 @@ class TemplateParser
         return $html;
     }
 
-    public function convertTemplateToJson($items, $templateName)
+    public function emitTemplateLiveDataJson($items, $templateName)
     {
-        $html = $this->convertTemplateToHtml($items, $templateName);
+        $html = $this->emitTemplateLiveDataHtml($items, $templateName);
 
         $data = new class {};
         $data->id = "1100";
@@ -67,7 +67,7 @@ class TemplateParser
         return __('Error on line %s of template "%s": ', $this->templateRowNumber, $this->templateName);
     }
 
-    protected function isTemplateDenitionRow($row)
+    protected function isTemplateDefinitionRow($row)
     {
         $parts = array_map('trim', explode(':', $row));
         if (count($parts) < 2 || strtolower($parts[0]) != 'template')
@@ -181,7 +181,7 @@ class TemplateParser
                 continue;
 
             // Start creating a new template if this row specifies "Template: <template-name>".
-            if ($this->isTemplateDenitionRow($row))
+            if ($this->isTemplateDefinitionRow($row))
             {
                 $templates[$this->templateName] = [];
                 continue;
@@ -201,7 +201,7 @@ class TemplateParser
         return json_encode($this->parsedTextTemplates);
     }
 
-    protected function replaceSpecifierWithValue($items, $specifier)
+    protected function replaceSpecifierWithLiveData($items, $specifier)
     {
         // This method replaces specifier with data values in response to a Live Data request.
 
@@ -290,6 +290,9 @@ class TemplateParser
         }
         else
         {
+            if ($firstArg == 'file-url' || $firstArg == 'item-url')
+                return $specifier;
+
             // Replace the element Id with the element name.
             $elementName = MapsAlive::getElementNameForElementId($firstArg);
             $parts[0] = $elementName;

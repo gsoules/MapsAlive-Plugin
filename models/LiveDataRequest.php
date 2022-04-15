@@ -32,9 +32,9 @@ class LiveDataRequest
         $parser = new TemplateParser();
 
         if ($requestType == self::REQUEST_TYPE_HTML)
-            $response = $parser->convertTemplateToHtml($items, $templateName);
+            $response = $parser->emitTemplateLiveDataHtml($items, $templateName);
         else if ($requestType == self::REQUEST_TYPE_JSON)
-            $response = $parser->convertTemplateToJson($items, $templateName);
+            $response = $parser->emitTemplateLiveDataJson($items, $templateName);
 
         return $response;
     }
