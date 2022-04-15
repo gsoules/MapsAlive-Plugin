@@ -1,11 +1,69 @@
 <?php
 
-class TemplateParser
+class TemplateCompiler
 {
     protected $templateRowNumber;
     protected $templatesRowNumber = 0;
     protected $templateName = "";
     protected $parsedTextTemplates = [];
+
+    protected function compileTemplate($templateName, $rows)
+    {
+        // Initialize class variables used to keep track of which template and which row is being parsed.
+        $this->parsedTextTemplates[$templateName] = [];
+        $this->templateName = $templateName;
+        $this->templateRowNumber = 0;
+
+        // Process each template row to validate its specifiers and to translate element names to element Ids.
+        // Keep track of the row number solely for the purpose of reporting validation errors.
+        foreach ($rows as $row)
+        {
+            $this->templateRowNumber += 1;
+            $parsedRow = $this->parseTemplateRow($row, true);
+
+            // Add the parsed row to the template.
+            $this->parsedTextTemplates[$templateName][] = $parsedRow;
+        }
+    }
+
+    public function compileTemplates($text)
+    {
+        $templates = [];
+        $rows = explode(PHP_EOL, $text);
+
+        // Loop over every row in the configuration page's templates text area.
+        // Identify which rows below to which templates and create an array of templates.
+        foreach ($rows as $row)
+        {
+            $this->templatesRowNumber += 1;
+
+            // Skip blank rows.
+            if (trim($row) == "")
+                continue;
+
+            // Start creating a new template if this row specifies "Template: <template-name>".
+            if ($this->isTemplateDefinitionRow($row))
+            {
+                if (array_key_exists($this->templateName, $templates))
+                    throw new Omeka_Validate_Exception(__('Template name "%s" on line %s has already been defined.', $this->templateName, $this->templatesRowNumber));
+
+                $templates[$this->templateName] = [];
+                continue;
+            }
+
+            // Add the row to the rows for the current template.
+            $templates[$this->templateName][] = $row;
+        }
+
+        // Process each text template to validate its specifiers and to translate element names to element Ids.
+        foreach ($templates as $templateName => $rows)
+        {
+            $this->compileTemplate($templateName, $rows);
+        }
+
+        // Create a JSON array of templates to be stored in the database.
+        return json_encode($this->parsedTextTemplates);
+    }
 
     public function emitTemplateLiveDataHtml($items, $templateName)
     {
@@ -69,10 +127,13 @@ class TemplateParser
 
     protected function isTemplateDefinitionRow($row)
     {
-        $parts = array_map('trim', explode(':', $row));
-        if (count($parts) < 2 || strtolower($parts[0]) != 'template')
+        $args = array_map('trim', explode(':', $row));
+        if (count($args) < 2 || strtolower($args[0]) != 'template')
             return false;
-        $this->templateName = $parts[1];
+        $this->templateName = $args[1];
+
+        if (!$this->validateDefinitionName($this->templateName))
+            throw new Omeka_Validate_Exception(__('Template name "%s" on line %s must contain only alphanumeric characters and underscore.', $this->templateName, $this->templatesRowNumber));
 
         if ($this->templateName == "")
             throw new Omeka_Validate_Exception(__('No template name specified on line %s.', $this->templatesRowNumber));
@@ -92,118 +153,63 @@ class TemplateParser
 
     protected function parseSpecifier($specifier)
     {
-        // Get the content of the specifier, the part that's between the curly braces, and split it into its parts.
+        // Get the content of the specifier (the part that's between the curly braces) and split it into its arguments.
         $content = substr($specifier, 2, strlen($specifier) - 3);
-        $parts = array_map('trim', explode(',', $content));
-        return $parts;
+        $args = array_map('trim', explode(',', $content));
+        return $args;
     }
 
-    protected function parseTemplateRow($row, $convertElementNamesToIds)
+    protected function parseTemplateRow($row, $compiling)
     {
-        // This method translates the specifiers in a template row from one form to another. When used to save
-        // a template on the configuration page, it translates element names to element Ids. The result can then
-        // be saved in the datebase as JSON. When used to read a template from the database, it translates element
-        // Ids to element names so that the template can be displayed on the configuration page.
+        // This method translates the specifiers in a template row from one form to another. When compiling a
+        // template's text from the configuration page, it translates element names to element Ids. The result
+        // can then be saved in the datebase as JSON. When used to uncompile a template from the database, it
+        // translates element Ids to element names so that the template can be displayed on the configuration page.
 
-        // Parse the row's text from left to right until no more specifiers are found.
-        // Initially no text has been parsed and the remaining text is the entire row.
-
-        $remainingText = $row;
+        $textRemainingOnRow = $row;
         $parsedText = "";
+
+        // Parse the row's text from left to right until no more ${...} specifiers are found.
+        // on the row. Initially no text has been parsed and the remaining text is the entire row.
 
         while (true)
         {
-            $start = strpos($remainingText, '${');
+            $start = strpos($textRemainingOnRow, '${');
             if ($start === false)
             {
                 // There's no specifier in the remaining text.
-                $parsedText .= $remainingText;
+                $parsedText .= $textRemainingOnRow;
                 break;
             }
             else
             {
                 // Find the end of the current specifier. It is required to be on the same line as the start.
-                $end = strpos($remainingText, '}');
+                $end = strpos($textRemainingOnRow, '}');
                 if ($end === false)
                     throw new Omeka_Validate_Exception($this->errorPrefix() . __('Closing "}" is missing'));
 
                 // Get the complete specifier including its opening '${' and closing '}'.
                 $end += 1;
-                $specifier = substr($remainingText, $start, $end - $start);
+                $specifier = substr($textRemainingOnRow, $start, $end - $start);
 
-                // Translate an element name to an element Id or vice-versa.
-                $translatedSpecifier = $this->translateSpecifier($specifier, $convertElementNamesToIds);
+                // Translate an element name to an element Id when compiling or vice-versa when uncompiling.
+                $translatedSpecifier = $this->translateSpecifier($specifier, $compiling);
 
                 // Replace the original specifier with the translated specifier.
-                $parsedText .= substr($remainingText, 0, $start);
+                $parsedText .= substr($textRemainingOnRow, 0, $start);
                 $parsedText .= $translatedSpecifier;
 
                 // Reduce the remaining text to what's left after the just-translated specifier.
-                $remainingText = substr($remainingText, $end);
+                $textRemainingOnRow = substr($textRemainingOnRow, $end);
             }
         }
 
         return $parsedText;
     }
 
-    protected function parseTextTemplateRows($templateName, $rows)
-    {
-        // Initialize class variables used to keep track of which template and which row is being parsed.
-        $this->parsedTextTemplates[$templateName] = [];
-        $this->templateName = $templateName;
-        $this->templateRowNumber = 0;
-
-        // Process each text template row to validate its specifiers and to translate element names to element Ids.
-        // Keep track of the row number solely for the purpose of reporting validation errors.
-        foreach ($rows as $row)
-        {
-            $this->templateRowNumber += 1;
-            $parsedRow = $this->parseTemplateRow($row, true);
-
-            // Add the parsed row to the template.
-            $this->parsedTextTemplates[$templateName][] = $parsedRow;
-        }
-    }
-
-    public function parseTextTemplates($text)
-    {
-        $templates = [];
-        $rows = explode(PHP_EOL, $text);
-
-        // Loop over every row in the configuration page's templates text area.
-        // Identify which rows below to which templates and create an array of templates.
-        foreach ($rows as $row)
-        {
-            $this->templatesRowNumber += 1;
-
-            // Skip blank rows.
-            if (trim($row) == "")
-                continue;
-
-            // Start creating a new template if this row specifies "Template: <template-name>".
-            if ($this->isTemplateDefinitionRow($row))
-            {
-                $templates[$this->templateName] = [];
-                continue;
-            }
-
-            // Add the row to the rows for the current template.
-            $templates[$this->templateName][] = $row;
-        }
-
-        // Process each text template to validate its specifiers and to translate element names to element Ids.
-        foreach ($templates as $templateName => $rows)
-        {
-            $this->parseTextTemplateRows($templateName, $rows);
-        }
-
-        // Create a JSON array of templates to be stored in the database.
-        return json_encode($this->parsedTextTemplates);
-    }
-
     protected function replaceSpecifierWithLiveData($items, $specifier)
     {
-        // This method replaces specifier with data values in response to a Live Data request.
+        // This method replaces a specifier with a data value in response to a Live Data request.
 
         $parts = $this->parseSpecifier($specifier);
         $argsCount = count($parts);
@@ -248,45 +254,46 @@ class TemplateParser
         return $value;
     }
 
-    protected function translateSpecifier($specifier, $convertElementNamesToIds)
+    protected function translateSpecifier($specifier, $compiling)
     {
-        // This method translate an element name or element Id that is specified within ${...} to an element Id
-        // or element name respectively. If the specifier is file-url or item-url, this method only validates the
-        // specifier, but does no translation.
+        // When compiling a template, this method translate an element name within a specifier ${...} to an
+        // element Id. When uncompiling, it translates an element Id to an element name. If the specifier is
+        // file-url or item-url, this method only validates the specifier, but does no translation.
 
-        $parts = $this->parseSpecifier($specifier);
-        $argsCount = count($parts);
+        // Break the specifier into its individual arguments.
+        $args = $this->parseSpecifier($specifier);
+        $argsCount = count($args);
 
-        if ($argsCount == 1 && $parts[0] == "")
+        if ($argsCount == 1 && $args[0] == "")
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('No specifier provided.'));
 
-        $firstArg = $parts[0];
+        $firstArg = $args[0];
 
-        if ($convertElementNamesToIds)
+        if ($compiling)
         {
             // Validate that the specifier has the correct number of arguments and that they are valid.
             // If any problems are discovered, the validation method will throw a validation exception.
             // For valid file-url and item-url specifiers, return the specifier as-is.
             if ($firstArg == 'file-url')
             {
-                $this->validateFileUrlSpecifier($parts);
+                $this->validateFileUrlSpecifier($args);
                 return $specifier;
             }
 
             if ($firstArg == 'item-url')
             {
-                $this->validateItemUrlSpecifier($parts);
+                $this->validateItemUrlSpecifier($args);
                 return $specifier;
             }
 
-            $this->validateElementSpecifier($parts);
+            $this->validateElementSpecifier($args);
 
             // Replace the element name with its element Id.
             $elementId = MapsAlive::getElementIdForElementName($firstArg);
             if ($elementId == 0)
                 throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $firstArg));
 
-            $parts[0] = $elementId;
+            $args[0] = $elementId;
         }
         else
         {
@@ -295,56 +302,65 @@ class TemplateParser
 
             // Replace the element Id with the element name.
             $elementName = MapsAlive::getElementNameForElementId($firstArg);
-            $parts[0] = $elementName;
+            $args[0] = $elementName;
         }
 
         // Reconstruct the specifier with the element name converted to an Id or vice-versa.
-        return '${' . implode(',', $parts) . '}';
+        return '${' . implode(',', $args) . '}';
     }
 
-    public function unparseJsonTemplates($json)
+    public function unComplileTemplates($json)
     {
-        $text = "";
+        // Make sure the compiled templates are valid JSON.
         $templates = json_decode($json, true);
         if ($templates == null)
             return "";
 
+        $textForAllTemplates = "";
+
+        // Loop over each template object and create a template definition followed by the template's content.
         foreach ($templates as $templateName => $rows)
         {
-            $text .= "Template: $templateName";
+            // Insert a blank line before each template definition except for the first one.
+            if (strlen($textForAllTemplates) > 0)
+                $textForAllTemplates .= PHP_EOL . PHP_EOL;
+
+            $textForAllTemplates .= "Template: $templateName";
             foreach ($rows as $row)
             {
-                $parsedRow = $this->parseTemplateRow($row, false);
-                $text .= PHP_EOL . $parsedRow;
+                $compiling = false;
+                $parsedRow = $this->parseTemplateRow($row, $compiling);
+                $textForAllTemplates .= PHP_EOL . $parsedRow;
             }
-            $text .= PHP_EOL . PHP_EOL;
         }
 
-        return $text;
+        return $textForAllTemplates;
     }
 
-    protected function validateFileUrlSpecifier($parts)
+    protected function validateFileUrlSpecifier($args)
     {
-        $argsCount = count($parts);
+        // Validate the arguments for a file-url specifier and report an error if a problem is found.
+
+        $argsCount = count($args);
 
         if ($argsCount < 2)
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('The file-url specifier requires a size argument.'));
 
-        $secondArg = $parts[1];
+        $secondArg = $args[1];
         if (!in_array($secondArg, ['thumbnail', 'fullsize', 'original']))
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file size. Use thumbnail, fullsize, or original.', $secondArg));
 
         if ($argsCount == 2)
             return;
 
-        $itemIndex = $parts[2];
+        $itemIndex = $args[2];
         if (!$this->isValidIndex($itemIndex))
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
 
         if ($argsCount == 3)
             return;
 
-        $fileIndex = $parts[3];
+        $fileIndex = $args[3];
         if (!$this->isValidIndex($fileIndex))
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file index. The index must be an integer >= 1', $fileIndex));
 
@@ -354,6 +370,8 @@ class TemplateParser
 
     protected function validateElementSpecifier($parts)
     {
+        // Validate the arguments for an element name specifier and report an error if a problem is found.
+
         $argsCount = count($parts);
 
         if ($argsCount == 2)
@@ -369,6 +387,8 @@ class TemplateParser
 
     protected function validateItemUrlSpecifier($parts)
     {
+        // Validate the arguments for an item-url specifier and report an error if a problem is found.
+
         $argsCount = count($parts);
 
         if ($argsCount == 1)
@@ -380,5 +400,11 @@ class TemplateParser
 
         if ($argsCount > 2)
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for item-url has too many arguments. It should have 1 or 2.'));
+    }
+
+    protected function validateDefinitionName($name)
+    {
+        $result = preg_match('/^[a-zA-Z0-9_]+$/', $name);
+        return $result === 1;
     }
 }

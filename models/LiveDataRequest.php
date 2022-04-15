@@ -29,7 +29,7 @@ class LiveDataRequest
                 $items[] = $records[0];
         }
 
-        $parser = new TemplateParser();
+        $parser = new TemplateCompiler();
 
         if ($requestType == self::REQUEST_TYPE_HTML)
             $response = $parser->emitTemplateLiveDataHtml($items, $templateName);
