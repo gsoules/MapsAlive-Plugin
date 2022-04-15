@@ -71,7 +71,7 @@ class TemplateCompiler
 
     public function emitTemplateLiveData($items, $template)
     {
-        $html = "";
+        $body = "";
 
         $rows = $template['rows'];
         foreach ($rows as $row)
@@ -84,7 +84,7 @@ class TemplateCompiler
                 if ($start === false)
                 {
                     // There's no specifier. Keep the rest of the row text and go onto the next.
-                    $html .= $remaining;
+                    $body .= $remaining;
                     break;
                 }
                 $end = strpos($remaining, '}');
@@ -95,18 +95,32 @@ class TemplateCompiler
 
                 // Replace the entire specifier with a data value.
                 $replacement = $this->replaceSpecifierWithLiveData($items, $specifier);
-                $html .= substr($remaining, 0, $start);
-                $html .= $replacement;
+
+                // Escape double quotes in a JSON response.
+                if ($template['format'] == 'JSON')
+                    $replacement = str_replace('"', '\\"', $replacement);
+
+                $body .= substr($remaining, 0, $start);
+                $body .= $replacement;
 
                 $remaining = substr($remaining, $end);
             }
         }
 
-        $data = new class {};
-        $data->id = "0";
-        $data->html = $html;
+        $response = "";
 
-        $response = json_encode($data);
+        if ($template['format'] == 'HTML')
+        {
+            $data = new class {};
+            $data->id = "0";
+            $data->html = $body;
+            $response = json_encode($data);
+        }
+        else if ($template['format'] == 'JSON')
+        {
+            $response = $body;
+        }
+
         return $response;
     }
 
@@ -354,7 +368,7 @@ class TemplateCompiler
             if (strlen($uncompiledText) > 0)
                 $uncompiledText .= PHP_EOL . PHP_EOL;
 
-            // Get the template's identifer element name from its element Id.
+            // Get the template's identifier element name from its element Id.
             $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
 
             // Form the template definition line.
