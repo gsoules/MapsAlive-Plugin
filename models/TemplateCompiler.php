@@ -108,15 +108,16 @@ class TemplateCompiler
         $repeatEndIndex = $template['repeat-end'] - 1;
 
         $parsedText = "";
-
         $index = 0;
         $rows = $template['rows'];
         $lastRowIndex = count($rows) - 1;
 
+        // Loop over every row in the template inserting Live Data values where the rows contain specifiers.
+        // If the template has  repeating section, the row index will get reset while in that section to
+        // cause it to be looped over once for each item used for the repetition.
         while ($index <= $lastRowIndex)
         {
             $repeating = $templateRepeats && $repeatCount > 0 && ($index >= $repeatStartIndex && $index <= $repeatEndIndex);
-
             $row = $rows[$index];
 
             // Discard delimiter rows.
@@ -127,7 +128,12 @@ class TemplateCompiler
             }
             else
             {
-                // Determine which item(s) to user for obtaining Live Data.
+                // Determine which item(s) to use for obtaining Live Data. When a template repeats, the first items
+                // passed in $items is used for the non-repeating part of the template (the rows before and after
+                // the repeating section) and the rest of the items are used one at a time for the repeating section.
+                // If the template does not repeat, all of the items are made available to the template so that its
+                // specifiers can choose metadata and URL values from multiple items. In contrast, specifiers in a
+                // repeating template can only ever use one item.
                 if ($templateRepeats)
                 {
                     $itemIndex = $repeating ? count($items) - $repeatCount : 0;
@@ -138,8 +144,10 @@ class TemplateCompiler
                     $itemList = $items;
                 }
 
-                $parsedText = $this->emitLiveDataIntoText($row, $parsedText, $itemList, $template['format']);
+                // Replace the row's specifiers with Live Data values.
+                $parsedText = $this->emitLiveDataIntoRow($row, $parsedText, $itemList, $template['format']);
 
+                // Determine if/how the loop index needs to get reset to loop again over a repeating section.
                 if ($repeating && $index == $repeatEndIndex)
                 {
                     $repeatCount -= 1;
@@ -172,31 +180,33 @@ class TemplateCompiler
         return $response;
     }
 
-    protected function emitLiveDataIntoText($text, string $parsedText, $itemList, $format): string
+    protected function emitLiveDataIntoRow($row, string $parsedText, $itemList, $format): string
     {
+        // Replace each specifier in the text with its Live Data value.
+        $remainingText = $row;
         while (true)
         {
-            // Look for a specifier on this row. A null token means no specifier found.
-            $token = $this->getSpecifierToken($text);
+            // Look for a specifier in this row. A null token means no specifier found.
+            $token = $this->getSpecifierToken($remainingText);
             if ($token == null)
             {
-                $parsedText .= $text;
+                $parsedText .= $remainingText;
                 break;
             }
-
             $specifier = $token['specifier'];
 
-            // Replace the entire specifier with a Live Data value.
+            // Replace the specifier with a Live Data value.
             $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
 
             // Escape double quotes in a JSON response.
             if ($format == 'JSON')
                 $replacement = str_replace('"', '\\"', $replacement);
 
-            $parsedText .= substr($text, 0, $token['start']);
+            // Insert the Live Data substitution into the original text.
+            $parsedText .= substr($remainingText, 0, $token['start']);
             $parsedText .= $replacement;
 
-            $text = $token['remaining'];
+            $remainingText = $token['remaining'];
         }
         return $parsedText;
     }
