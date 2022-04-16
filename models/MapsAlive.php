@@ -48,8 +48,10 @@ class MapsAlive
 
             if (!in_array($file->mime_type, $supportedImageMimeTypes))
             {
-                // The original image is not a jpg (it's probably a pdf) so return its derivative image instead.
-                $url = $file->getWebPath('fullsize');
+                // The original image is not a jpg (it's probably a pdf) in which case return a smaller size.
+                if ($derivativeSize === "original")
+                    $derivativeSize = "fullsize";
+                $url = $file->getWebPath($derivativeSize);
             }
         }
         return $url;
