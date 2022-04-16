@@ -43,9 +43,14 @@ class TemplateCompiler
             }
 
             if ($repeatRow)
+            {
                 $parsedRow = $row;
+                $this->templates[$templateName]['repeats'] = true;
+            }
             else
+            {
                 $parsedRow = $this->parseTemplateRow($row, true);
+            }
 
             $this->templates[$templateName]['rows'][$this->templateRowNumber] = $parsedRow;
             $this->templateRowNumber += 1;
@@ -76,7 +81,7 @@ class TemplateCompiler
                 $this->templates[$this->templateName]['name'] = $this->templateName;
                 $this->templates[$this->templateName]['identifier'] = $this->templateElementId;
                 $this->templates[$this->templateName]['format'] = $this->templateFormat;
-                $this->templates[$this->templateName]['repeats'] = $this->templateRepeats;
+                $this->templates[$this->templateName]['repeats'] = false;
                 $this->templates[$this->templateName]['repeat-start'] = 0;
                 $this->templates[$this->templateName]['repeat-end'] = 0;
                 $this->templates[$this->templateName]['rows'] = [];
@@ -254,8 +259,11 @@ class TemplateCompiler
         if (array_key_exists($this->templateName, $this->templates))
             throw new Omeka_Validate_Exception(__('Template "%s" on line %s has already been defined.', $this->templateName, $this->templatesRowNumber));
 
+        if ($argsCount < 2)
+            throw new Omeka_Validate_Exception(__('Template definition "%s" on line %s is missing its item identifier.', $this->templateName, $this->templatesRowNumber));
+
         if ($argsCount < 3)
-            throw new Omeka_Validate_Exception(__('Template definition for "%s" on line %s is missing required arguments.', $this->templateName, $this->templatesRowNumber));
+            throw new Omeka_Validate_Exception(__('Template definition "%s" on line %s does is missing its format (HTML or JSON).', $this->templateName, $this->templatesRowNumber));
 
         if (!$this->validateDefinitionName($this->templateName))
             throw new Omeka_Validate_Exception(__('Template name "%s" on line %s must contain only alphanumeric characters and underscore.', $this->templateName, $this->templatesRowNumber));
@@ -276,16 +284,7 @@ class TemplateCompiler
         if ($this->templateFormat != "HTML" && $this->templateFormat != "JSON")
             throw new Omeka_Validate_Exception(__('Invalid template format "%s" specified on line %s. Must be HTML or JSON.', $this->templateFormat, $this->templatesRowNumber));
 
-        $this->templateRepeats = false;
-        if ($argsCount == 4)
-        {
-            $repeats = $args[3];
-            if (strtolower($repeats) != "repeats")
-                throw new Omeka_Validate_Exception(__('Invalid repeats argument "%s" specified on line %s.', $repeats, $this->templatesRowNumber));
-            $this->templateRepeats = true;
-        }
-
-        if ($argsCount > 4)
+        if ($argsCount > 3)
             throw new Omeka_Validate_Exception(__('Too many arguments specified for template "%s" on line %s.', $this->templateName, $this->templatesRowNumber));
 
         return true;
@@ -483,8 +482,6 @@ class TemplateCompiler
 
             // Form the template definition line.
             $uncompiledText .= "Template: $templateName, $elementName, {$template['format']}";
-            if ($template['repeats'])
-                $uncompiledText .= ", repeats";
 
             // Uncompile the template rows by converting specifier element Ids to element names.
             $rows = $template['rows'];
