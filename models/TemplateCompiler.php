@@ -2,6 +2,11 @@
 
 class TemplateCompiler
 {
+    const REPEAT_START = '[--';
+    const REPEAT_END = '--]';
+    const SPECIFIER_START = '${';
+    const SPECIFIER_END = '}';
+
     protected $templateFormat = "";
     protected $templateElementId = "";
     protected $templateName = "";
@@ -21,10 +26,33 @@ class TemplateCompiler
         $rows = $this->templates[$templateName]['rows'];
         foreach ($rows as $row)
         {
-            $parsedRow = $this->parseTemplateRow($row, true);
+            $repeatRow = false;
+            if (substr(ltrim($row), 0, 2) == self::REPEAT_START)
+            {
+                if ($this->templates[$templateName]['repeat-start'] != 0)
+                    throw new Omeka_Validate_Exception(__('Template "%s" has more than one repeat start line.', $templateName));
+                $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 2;
+                $repeatRow = true;
+            }
+            else if (substr(ltrim($row), 0, 2) == self::REPEAT_END)
+            {
+                if ($this->templates[$templateName]['repeat-start'] == 0)
+                    throw new Omeka_Validate_Exception(__('Template "%s" has a repeat end line but no start line.', $templateName));
+                $this->templates[$templateName]['repeat-end'] = $this->templateRowNumber;
+                $repeatRow = true;
+            }
+
+            if ($repeatRow)
+                $parsedRow = $row;
+            else
+                $parsedRow = $this->parseTemplateRow($row, true);
+
             $this->templates[$templateName]['rows'][$this->templateRowNumber] = $parsedRow;
             $this->templateRowNumber += 1;
         }
+
+        if ($this->templates[$templateName]['repeat-start'] != 0 && $this->templates[$templateName]['repeat-end'] == 0)
+            throw new Omeka_Validate_Exception(__('Template "%s" has a repeat start line but no repeat end line.', $templateName));
     }
 
     public function compileTemplates($text)
@@ -45,10 +73,13 @@ class TemplateCompiler
             // Start creating a new template if this row specifies "Template: <template-name>".
             if ($this->isTemplateDefinitionRow($row))
             {
-                $this->templates[$this->templateName]['rows'] = [];
+                $this->templates[$this->templateName]['name'] = $this->templateName;
                 $this->templates[$this->templateName]['identifier'] = $this->templateElementId;
                 $this->templates[$this->templateName]['format'] = $this->templateFormat;
                 $this->templates[$this->templateName]['repeats'] = $this->templateRepeats;
+                $this->templates[$this->templateName]['repeat-start'] = 0;
+                $this->templates[$this->templateName]['repeat-end'] = 0;
+                $this->templates[$this->templateName]['rows'] = [];
                 continue;
             }
 
@@ -80,14 +111,15 @@ class TemplateCompiler
             while (true)
             {
                 // Look for a specifier in the remaining text on this row.
-                $start = strpos($remaining, '${');
+                $start = strpos($remaining, self::SPECIFIER_START);
                 if ($start === false)
                 {
                     // There's no specifier. Keep the rest of the row text and go onto the next.
                     $body .= $remaining;
                     break;
                 }
-                $end = strpos($remaining, '}');
+                $end = strpos($remaining, self::SPECIFIER_END);
+
                 $end += 1;
 
                 // Get the specifier including the ${...} wrapper.
@@ -127,6 +159,22 @@ class TemplateCompiler
     protected function errorPrefix()
     {
         return __('Error on line %s of template "%s": ', $this->templateRowNumber, $this->templateName);
+    }
+
+    protected function getSpecifierToken($text)
+    {
+        $start = strpos($text, self::SPECIFIER_START);
+        if ($start === false)
+            return null;
+
+        // Find the end of the current specifier. It is required to be on the same line as the start.
+        $end = strpos($text, self::SPECIFIER_END);
+
+        $token['specifier'] = $end === false ? "" :substr($text, $start, $end - $start + 1);
+        $token['start'] = $start;
+        $token['remaining'] = substr($text, $end + 1);
+
+        return $token;
     }
 
     protected function isTemplateDefinitionRow($row)
@@ -213,34 +261,27 @@ class TemplateCompiler
 
         while (true)
         {
-            $start = strpos($textRemainingOnRow, '${');
-            if ($start === false)
+            // Look for a specifier on this row. A null token means no specifier is null. An empty specifier means
+            // the closing curly brace was missing. That can only happen when compiling but always check for it
+            // in case the database text is malformed (should only happen during development).
+            $token = $this->getSpecifierToken($textRemainingOnRow);
+            if ($token == null || (!$compiling && $token['specifier'] == ""))
             {
-                // There's no specifier in the remaining text.
                 $parsedText .= $textRemainingOnRow;
                 break;
             }
-            else
-            {
-                // Find the end of the current specifier. It is required to be on the same line as the start.
-                $end = strpos($textRemainingOnRow, '}');
-                if ($end === false)
-                    throw new Omeka_Validate_Exception($this->errorPrefix() . __('Closing "}" is missing'));
 
-                // Get the complete specifier including its opening '${' and closing '}'.
-                $end += 1;
-                $specifier = substr($textRemainingOnRow, $start, $end - $start);
+            if ($token['specifier'] == "")
+               throw new Omeka_Validate_Exception($this->errorPrefix() . __('Closing "}" for specifier is missing'));
 
-                // Translate an element name to an element Id when compiling or vice-versa when uncompiling.
-                $translatedSpecifier = $this->translateSpecifier($specifier, $compiling);
+            // Translate an element name to an element Id when compiling or vice-versa when uncompiling.
+            $translatedSpecifier = $this->translateSpecifier($token['specifier'], $compiling);
 
-                // Replace the original specifier with the translated specifier.
-                $parsedText .= substr($textRemainingOnRow, 0, $start);
-                $parsedText .= $translatedSpecifier;
+            // Replace the original specifier with the translated specifier.
+            $parsedText .= substr($textRemainingOnRow, 0, $token['start']);
+            $parsedText .= $translatedSpecifier;
 
-                // Reduce the remaining text to what's left after the just-translated specifier.
-                $textRemainingOnRow = substr($textRemainingOnRow, $end);
-            }
+            $textRemainingOnRow = $token['remaining'];
         }
 
         return $parsedText;
