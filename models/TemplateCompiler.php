@@ -374,9 +374,18 @@ class TemplateCompiler
             $fileIndex = $argsCount > 3 ? $parts[3] - 1 : 0;
 
             // Get the URL for the specified file at the specified size. An empty string will be returned if the item
-            // does not have a file attachment, or does not have as many attachments as specified by the index.
-            $value = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
-            return $value;
+            // does not have a file attachment, or does not have as many attachments as specified by the index,
+            // or its a hybrid image e.g. exported from PastPerfect.
+            $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
+
+            if (!$imageUrl && plugin_is_active('AvantHybrid'))
+            {
+                $hybridImageRecords = AvantHybrid::getImageRecords($item->id);
+                if ($hybridImageRecords)
+                    $imageUrl = AvantHybrid::getImageUrl($hybridImageRecords[0]);
+            }
+
+            return $imageUrl;
         }
 
         // When the item index is greater than the number of items specified, return an empty string.
