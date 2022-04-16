@@ -27,14 +27,14 @@ class TemplateCompiler
         foreach ($rows as $row)
         {
             $repeatRow = false;
-            if (substr(ltrim($row), 0, 32) == self::REPEAT_START)
+            if ($this->isRepeatDelimiterRow($row, self::REPEAT_START))
             {
                 if ($this->templates[$templateName]['repeat-start'] != 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has more than one repeat start line.', $templateName));
                 $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 2;
                 $repeatRow = true;
             }
-            else if (substr(ltrim($row), 0, 3) == self::REPEAT_END)
+            else if ($this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
                 if ($this->templates[$templateName]['repeat-start'] == 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has a repeat end line but no start line.', $templateName));
@@ -119,51 +119,62 @@ class TemplateCompiler
 
             $row = $rows[$index];
 
-            $remainingText = $row;
-            while (true)
+            // Discard the delimiter rows.
+            if ($this->isRepeatDelimiterRow($row, self::REPEAT_START) ||
+                $this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
-                // Look for a specifier on this row. A null token means no specifier found.
-                $token = $this->getSpecifierToken($remainingText);
-                if ($token == null)
-                {
-                    $parsedText .= $remainingText;
-                    break;
-                }
-
-                $specifier = $token['specifier'];
-
-                // Replace the entire specifier with a data value.
-                if ($templateRepeats)
-                {
-                    $itemIndex = $repeating ? count($items) - $repeatCount : 0;
-                    $itemList = [$items[$itemIndex]];
-                }
-                else
-                {
-                    $itemList = $items;
-                }
-
-                $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
-
-                // Escape double quotes in a JSON response.
-                if ($template['format'] == 'JSON')
-                    $replacement = str_replace('"', '\\"', $replacement);
-
-                $parsedText .= substr($remainingText, 0, $token['start']);
-                $parsedText .= $replacement;
-
-                $remainingText = $token['remaining'];
-            }
-
-            if ($repeating && $index == $repeatEndIndex)
-            {
-                $repeatCount -= 1;
-                if ($repeatCount > 0)
-                    $index = $repeatStartIndex;
+                $index += 1;
             }
             else
             {
-                $index += 1;
+                $remainingText = $row;
+                while (true)
+                {
+                    // Look for a specifier on this row. A null token means no specifier found.
+                    $token = $this->getSpecifierToken($remainingText);
+                    if ($token == null)
+                    {
+                        $parsedText .= $remainingText;
+                        break;
+                    }
+
+                    $specifier = $token['specifier'];
+
+                    // Replace the entire specifier with a data value.
+                    if ($templateRepeats)
+                    {
+                        $itemIndex = $repeating ? count($items) - $repeatCount : 0;
+                        $itemList = [$items[$itemIndex]];
+                    }
+                    else
+                    {
+                        $itemList = $items;
+                    }
+
+                    $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
+
+                    // Escape double quotes in a JSON response.
+                    if ($template['format'] == 'JSON')
+                        $replacement = str_replace('"', '\\"', $replacement);
+
+                    $parsedText .= substr($remainingText, 0, $token['start']);
+                    $parsedText .= $replacement;
+
+                    $remainingText = $token['remaining'];
+                }
+
+                if ($repeating && $index == $repeatEndIndex)
+                {
+                    $repeatCount -= 1;
+                    if ($repeatCount > 0)
+                        $index = $repeatStartIndex;
+                    else
+                        $index = $repeatEndIndex + 1;
+                }
+                else
+                {
+                    $index += 1;
+                }
             }
         }
 
@@ -203,6 +214,11 @@ class TemplateCompiler
         $token['remaining'] = substr($text, $end + 1);
 
         return $token;
+    }
+
+    protected function isRepeatDelimiterRow($row, $delimiter)
+    {
+         return substr(ltrim($row), 0, strlen($delimiter)) == $delimiter;
     }
 
     protected function isTemplateDefinitionRow($row)
