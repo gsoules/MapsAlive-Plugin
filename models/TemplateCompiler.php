@@ -102,28 +102,23 @@ class TemplateCompiler
 
     public function emitTemplateLiveData($items, $template)
     {
-        $body = "";
+        $parsedText = "";
 
         $rows = $template['rows'];
         foreach ($rows as $row)
         {
-            $remaining = $row;
+            $remainingText = $row;
             while (true)
             {
-                // Look for a specifier in the remaining text on this row.
-                $start = strpos($remaining, self::SPECIFIER_START);
-                if ($start === false)
+                // Look for a specifier on this row. A null token means no specifier found.
+                $token = $this->getSpecifierToken($remainingText);
+                if ($token == null)
                 {
-                    // There's no specifier. Keep the rest of the row text and go onto the next.
-                    $body .= $remaining;
+                    $parsedText .= $remainingText;
                     break;
                 }
-                $end = strpos($remaining, self::SPECIFIER_END);
 
-                $end += 1;
-
-                // Get the specifier including the ${...} wrapper.
-                $specifier = substr($remaining, $start, $end - $start);
+                $specifier = $token['specifier'];
 
                 // Replace the entire specifier with a data value.
                 $replacement = $this->replaceSpecifierWithLiveData($items, $specifier);
@@ -132,10 +127,10 @@ class TemplateCompiler
                 if ($template['format'] == 'JSON')
                     $replacement = str_replace('"', '\\"', $replacement);
 
-                $body .= substr($remaining, 0, $start);
-                $body .= $replacement;
+                $parsedText .= substr($remainingText, 0, $token['start']);
+                $parsedText .= $replacement;
 
-                $remaining = substr($remaining, $end);
+                $remainingText = $token['remaining'];
             }
         }
 
@@ -145,12 +140,12 @@ class TemplateCompiler
         {
             $data = new class {};
             $data->id = "0";
-            $data->html = $body;
+            $data->html = $parsedText;
             $response = json_encode($data);
         }
         else if ($template['format'] == 'JSON')
         {
-            $response = $body;
+            $response = $parsedText;
         }
 
         return $response;
@@ -253,7 +248,7 @@ class TemplateCompiler
         // can then be saved in the datebase as JSON. When used to uncompile a template from the database, it
         // translates element Ids to element names so that the template can be displayed on the configuration page.
 
-        $textRemainingOnRow = $row;
+        $remainingText = $row;
         $parsedText = "";
 
         // Parse the row's text from left to right until no more ${...} specifiers are found.
@@ -261,13 +256,13 @@ class TemplateCompiler
 
         while (true)
         {
-            // Look for a specifier on this row. A null token means no specifier is null. An empty specifier means
+            // Look for a specifier on this row. A null token means no specifier found. An empty specifier means
             // the closing curly brace was missing. That can only happen when compiling but always check for it
             // in case the database text is malformed (should only happen during development).
-            $token = $this->getSpecifierToken($textRemainingOnRow);
+            $token = $this->getSpecifierToken($remainingText);
             if ($token == null || (!$compiling && $token['specifier'] == ""))
             {
-                $parsedText .= $textRemainingOnRow;
+                $parsedText .= $remainingText;
                 break;
             }
 
@@ -278,10 +273,10 @@ class TemplateCompiler
             $translatedSpecifier = $this->translateSpecifier($token['specifier'], $compiling);
 
             // Replace the original specifier with the translated specifier.
-            $parsedText .= substr($textRemainingOnRow, 0, $token['start']);
+            $parsedText .= substr($remainingText, 0, $token['start']);
             $parsedText .= $translatedSpecifier;
 
-            $textRemainingOnRow = $token['remaining'];
+            $remainingText = $token['remaining'];
         }
 
         return $parsedText;
