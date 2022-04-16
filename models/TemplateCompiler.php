@@ -119,7 +119,7 @@ class TemplateCompiler
 
             $row = $rows[$index];
 
-            // Discard the delimiter rows.
+            // Discard delimiter rows.
             if ($this->isRepeatDelimiterRow($row, self::REPEAT_START) ||
                 $this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
@@ -127,41 +127,18 @@ class TemplateCompiler
             }
             else
             {
-                $remainingText = $row;
-                while (true)
+                // Determine which item(s) to user for obtaining Live Data.
+                if ($templateRepeats)
                 {
-                    // Look for a specifier on this row. A null token means no specifier found.
-                    $token = $this->getSpecifierToken($remainingText);
-                    if ($token == null)
-                    {
-                        $parsedText .= $remainingText;
-                        break;
-                    }
-
-                    $specifier = $token['specifier'];
-
-                    // Replace the entire specifier with a data value.
-                    if ($templateRepeats)
-                    {
-                        $itemIndex = $repeating ? count($items) - $repeatCount : 0;
-                        $itemList = [$items[$itemIndex]];
-                    }
-                    else
-                    {
-                        $itemList = $items;
-                    }
-
-                    $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
-
-                    // Escape double quotes in a JSON response.
-                    if ($template['format'] == 'JSON')
-                        $replacement = str_replace('"', '\\"', $replacement);
-
-                    $parsedText .= substr($remainingText, 0, $token['start']);
-                    $parsedText .= $replacement;
-
-                    $remainingText = $token['remaining'];
+                    $itemIndex = $repeating ? count($items) - $repeatCount : 0;
+                    $itemList = [$items[$itemIndex]];
                 }
+                else
+                {
+                    $itemList = $items;
+                }
+
+                $parsedText = $this->emitLiveDataIntoText($row, $parsedText, $itemList, $template['format']);
 
                 if ($repeating && $index == $repeatEndIndex)
                 {
@@ -193,6 +170,35 @@ class TemplateCompiler
         }
 
         return $response;
+    }
+
+    protected function emitLiveDataIntoText($text, string $parsedText, $itemList, $format): string
+    {
+        while (true)
+        {
+            // Look for a specifier on this row. A null token means no specifier found.
+            $token = $this->getSpecifierToken($text);
+            if ($token == null)
+            {
+                $parsedText .= $text;
+                break;
+            }
+
+            $specifier = $token['specifier'];
+
+            // Replace the entire specifier with a Live Data value.
+            $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
+
+            // Escape double quotes in a JSON response.
+            if ($format == 'JSON')
+                $replacement = str_replace('"', '\\"', $replacement);
+
+            $parsedText .= substr($text, 0, $token['start']);
+            $parsedText .= $replacement;
+
+            $text = $token['remaining'];
+        }
+        return $parsedText;
     }
 
     protected function errorPrefix()
