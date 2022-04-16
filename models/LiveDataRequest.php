@@ -19,7 +19,7 @@ class LiveDataRequest
     public function handleLiveDataRequest()
     {
         // Validate the request arguments.
-        $errorMessage = $this->validateRequest($this->itemIdentifiers);
+        $errorMessage = $this->validateRequest();
         if ($errorMessage)
             return $this->errorResponse($errorMessage);
 
@@ -42,11 +42,11 @@ class LiveDataRequest
         return $response;
     }
 
-    function validateRequest($itemIdentifiers)
+    function validateRequest()
     {
-        $this->itemIdentifiers = isset($_GET['items']) ? $_GET['items'] : 0;
+        $this->itemIdentifiers = isset($_GET['items']) ? $_GET['items'] : "";
 
-        if ($this->itemIdentifiers == 0)
+        if ($this->itemIdentifiers == "")
             return "No item identifier(s) provided";
 
         $this->templateName = isset($_GET['template']) ? $_GET['template'] : "";
