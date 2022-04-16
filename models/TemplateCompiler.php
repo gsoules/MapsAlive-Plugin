@@ -133,7 +133,17 @@ class TemplateCompiler
                 $specifier = $token['specifier'];
 
                 // Replace the entire specifier with a data value.
-                $replacement = $this->replaceSpecifierWithLiveData($items, $specifier);
+                if ($templateRepeats)
+                {
+                    $itemIndex = $repeating ? count($items) - $repeatCount : 0;
+                    $itemList = [$items[$itemIndex]];
+                }
+                else
+                {
+                    $itemList = $items;
+                }
+
+                $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
 
                 // Escape double quotes in a JSON response.
                 if ($template['format'] == 'JSON')
