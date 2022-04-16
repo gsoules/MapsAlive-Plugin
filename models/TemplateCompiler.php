@@ -27,14 +27,14 @@ class TemplateCompiler
         foreach ($rows as $row)
         {
             $repeatRow = false;
-            if (substr(ltrim($row), 0, 2) == self::REPEAT_START)
+            if (substr(ltrim($row), 0, 32) == self::REPEAT_START)
             {
                 if ($this->templates[$templateName]['repeat-start'] != 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has more than one repeat start line.', $templateName));
                 $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 2;
                 $repeatRow = true;
             }
-            else if (substr(ltrim($row), 0, 2) == self::REPEAT_END)
+            else if (substr(ltrim($row), 0, 3) == self::REPEAT_END)
             {
                 if ($this->templates[$templateName]['repeat-start'] == 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has a repeat end line but no start line.', $templateName));
@@ -102,11 +102,23 @@ class TemplateCompiler
 
     public function emitTemplateLiveData($items, $template)
     {
+        $templateRepeats = $template['repeats'];
+        $repeatCount = count($items) - 1;
+        $repeatStartIndex = $template['repeat-start'] - 1;
+        $repeatEndIndex = $template['repeat-end'] - 1;
+
         $parsedText = "";
 
+        $index = 0;
         $rows = $template['rows'];
-        foreach ($rows as $row)
+        $lastRowIndex = count($rows) - 1;
+
+        while ($index <= $lastRowIndex)
         {
+            $repeating = $templateRepeats && $repeatCount > 0 && ($index >= $repeatStartIndex && $index <= $repeatEndIndex);
+
+            $row = $rows[$index];
+
             $remainingText = $row;
             while (true)
             {
@@ -131,6 +143,17 @@ class TemplateCompiler
                 $parsedText .= $replacement;
 
                 $remainingText = $token['remaining'];
+            }
+
+            if ($repeating && $index == $repeatEndIndex)
+            {
+                $repeatCount -= 1;
+                if ($repeatCount > 0)
+                    $index = $repeatStartIndex;
+            }
+            else
+            {
+                $index += 1;
             }
         }
 
