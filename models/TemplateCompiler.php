@@ -68,7 +68,6 @@ class TemplateCompiler
         {
             $this->templateRowNumber += 1;
 
-            $repeatRow = false;
             if ($this->isRepeatDelimiterRow($row, self::REPEAT_START))
             {
                 if ($this->templates[$templateName]['repeat-start'] != 0)
