@@ -74,20 +74,14 @@ class TemplateCompiler
                 if ($this->templates[$templateName]['repeat-start'] != 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has more than one repeat start line.', $templateName));
                 $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 2;
-                $repeatRow = true;
+                $parsedRow = $row;
             }
             else if ($this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
                 if ($this->templates[$templateName]['repeat-start'] == 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has a repeat end line but no start line.', $templateName));
                 $this->templates[$templateName]['repeat-end'] = $this->templateRowNumber;
-                $repeatRow = true;
-            }
-
-            if ($repeatRow)
-            {
                 $parsedRow = $row;
-                $this->templates[$templateName]['repeats'] = true;
             }
             else
             {
@@ -98,7 +92,8 @@ class TemplateCompiler
         }
 
         // Validate the content of JSON template.
-        if ($this->templates[$templateName]['format'] == self::FORMAT_JSON)
+        $formatId = $this->templates[$templateName]['format'];
+        if ($this->formats[$formatId] == self::FORMAT_JSON)
         {
             $json = implode(PHP_EOL, $rows);
             @json_decode($json);
@@ -130,8 +125,7 @@ class TemplateCompiler
             {
                 $this->templates[$this->templateName]['name'] = $this->templateName;
                 $this->templates[$this->templateName]['identifier'] = $this->templateElementId;
-                $this->templates[$this->templateName]['format'] = $this->templateFormat;
-                $this->templates[$this->templateName]['repeats'] = false;
+                $this->templates[$this->templateName]['format'] = array_keys($this->formats, $this->templateFormat)[0];
                 $this->templates[$this->templateName]['repeat-start'] = 0;
                 $this->templates[$this->templateName]['repeat-end'] = 0;
                 $this->templates[$this->templateName]['rows'] = [];
@@ -157,10 +151,10 @@ class TemplateCompiler
 
     public function emitTemplateLiveData($items, $template)
     {
-        $templateRepeats = $template['repeats'];
         $repeatCount = count($items) - 1;
         $repeatStartIndex = $template['repeat-start'] - 1;
         $repeatEndIndex = $template['repeat-end'] - 1;
+        $templateRepeats = $repeatStartIndex > 0 && $repeatEndIndex;
 
         $parsedText = "";
         $index = 0;
@@ -220,14 +214,15 @@ class TemplateCompiler
 
         $response = "";
 
-        if ($template['format'] == self::FORMAT_HTML)
+        $format = $this->formats[$template['format']];
+        if ($format == self::FORMAT_HTML)
         {
             $data = new class {};
             $data->id = "0";
             $data->html = $parsedText;
             $response = json_encode($data);
         }
-        else if ($template['format'] == self::FORMAT_JSON)
+        else if ($format == self::FORMAT_JSON)
         {
             $response = $parsedText;
         }
@@ -254,7 +249,7 @@ class TemplateCompiler
             $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
 
             // Escape double quotes in a JSON response.
-            if ($format == self::FORMAT_JSON)
+            if ($this->formats[$format] == self::FORMAT_JSON)
                 $replacement = str_replace('"', '\\"', $replacement);
 
             // Insert the Live Data substitution into the original text.
@@ -396,84 +391,98 @@ class TemplateCompiler
         return $parsedText;
     }
 
+    protected function replaceFileSpecifierWithLiveData(array $args, int $argsCount, $items)
+    {
+        $derivativeSize = $this->derivativeSizes[$args[1]];
+
+        // When the item index is greater than the number of items specified, return an empty string.
+        $itemIndex = $argsCount > 3 ? $args[3] - 1 : 0;
+        if ($itemIndex > count($items) - 1)
+            return "";
+
+        // Get the specified item.
+        $item = $items[$itemIndex];
+        if ($item == null)
+            return "";
+
+        // Get the file index or use 1 if no index was specified.
+        $fileIndex = $argsCount > 4 ? $args[4] - 1 : 0;
+
+        // Get the URL for the specified file at the specified size. An empty string will be returned if the item
+        // does not have a file attachment, or does not have as many attachments as specified by the index,
+        // or its a hybrid image e.g. exported from PastPerfect.
+        $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
+
+        if (!$imageUrl && plugin_is_active('AvantHybrid'))
+        {
+            $hybridImageRecords = AvantHybrid::getImageRecords($item->id);
+            if ($hybridImageRecords)
+                $imageUrl = AvantHybrid::getImageUrl($hybridImageRecords[0]);
+        }
+
+        $imageUrl = str_replace('\\', '/', $imageUrl);
+
+        $property = $args[2];
+        if ($this->fileProperties[$property] == self::FILE_PROPERTY_URL)
+            return $imageUrl;
+
+        if (in_array($imageUrl, $this->fileSizeCache))
+        {
+            $imageSize = $this->fileSizeCache[$imageUrl];
+        }
+        else
+        {
+            $imageSize = @getimagesize($imageUrl);
+            $this->fileSizeCache[$imageUrl] = $imageSize;
+        }
+
+        if ($imageSize)
+            return $this->fileProperties[$property] == self::FILE_PROPERTY_WIDTH ? $imageSize[0] : $imageSize[1];
+
+        return 0;
+    }
+
     protected function replaceSpecifierWithLiveData($items, $specifier)
     {
         // This method replaces a specifier with a data value in response to a Live Data request.
 
-        $parts = $this->parseSpecifier($specifier);
-        $argsCount = count($parts);
+        $args = $this->parseSpecifier($specifier);
+        $argsCount = count($args);
 
-        $specifierKind = $parts[0];
+        $specifierKind = $args[0];
 
-        if ($specifierKind == self::SPECIFIER_ID_FILE)
+        if ($this->specifiers[$specifierKind] == self::SPECIFIER_FILE)
         {
-            $derivativeSize = $parts[1];
-
-            $property = $parts[2];
-
-            // When the item index is greater than the number of items specified, return an empty string.
-            $itemIndex = $argsCount > 2 ? $parts[3] - 1 : 0;
-            if ($itemIndex > count($items) - 1)
-                return "";
-
-            // Get the specified item.
-            $item = $items[$itemIndex];
-            if ($item == null)
-                return "";
-
-            // Get the file index or use 1 if no index was specified.
-            $fileIndex = $argsCount > 4 ? $parts[4] - 1 : 0;
-
-            // Get the URL for the specified file at the specified size. An empty string will be returned if the item
-            // does not have a file attachment, or does not have as many attachments as specified by the index,
-            // or its a hybrid image e.g. exported from PastPerfect.
-            $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
-
-            if (!$imageUrl && plugin_is_active('AvantHybrid'))
-            {
-                $hybridImageRecords = AvantHybrid::getImageRecords($item->id);
-                if ($hybridImageRecords)
-                    $imageUrl = AvantHybrid::getImageUrl($hybridImageRecords[0]);
-            }
-
-            $imageUrl = str_replace('\\', '/', $imageUrl);
-
-            if ($property == 'url')
-                return $imageUrl;
-
-            if (in_array($this->fileSizeCache, $imageUrl))
-            {
-                $imageSize = $this->fileSizeCache[$imageUrl];
-            }
-            else
-            {
-                $imageSize = @getimagesize($imageUrl);
-                $this->fileSizeCache[$imageUrl] = $imageSize;
-            }
-
-            if ($imageSize)
-                return $property == 'width' ? $imageSize[0] : $imageSize[1];
-
-            return 0;
+            return $this->replaceFileSpecifierWithLiveData($args, $argsCount, $items);
         }
 
         // When the item index is greater than the number of items specified, return an empty string.
-        $itemIndex = $argsCount > 1 ? $parts[1] - 1 : 0;
+        $itemIndex = $argsCount > 2 ? $args[2] - 1 : 0;
         if ($itemIndex > count($items) - 1)
             return "";
 
-        // Get the item identified by specifier's item index.
+        // Get the item identified by the specifier's item index. Return empty string if there's no item for the index.
         $item = $items[$itemIndex];
         if ($item == null)
             return "";
 
         // Get the requested value.
-        if ($specifierKind == 'item-url')
-            $value = WEB_ROOT . '/items/show/' . $item->id;
-        else
-            $value = MapsAlive::getElementTextFromElementId($item, $specifierKind);
+        if ($this->specifiers[$specifierKind] == self::SPECIFIER_ITEM)
+        {
+            $property = $args[1];
+            $value = "";
+            if ($this->itemProperties[$property] == self::ITEM_PROPERTY_ID)
+                $value = $item->id;
+            else if ($this->itemProperties[$property] == self::ITEM_PROPERTY_URL)
+                $value = WEB_ROOT . '/items/show/' . $item->id;
+            return $value;
+        }
 
-        return $value;
+        if ($this->specifiers[$specifierKind] == self::SPECIFIER_ELEMENT)
+        {
+            $value = MapsAlive::getElementTextFromElementId($item, $args[1]);
+            return $value;
+        }
     }
 
     protected function requires($values)
@@ -650,7 +659,8 @@ class TemplateCompiler
             $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
 
             // Form the template definition line.
-            $uncompiledText .= "Template: $templateName, $elementName, {$template['format']}";
+            $formatId = $this->formats[$template['format']];
+            $uncompiledText .= "Template: $templateName, $elementName, $formatId";
 
             // Uncompile the template rows by converting specifier element Ids to element names.
             $rows = $template['rows'];
