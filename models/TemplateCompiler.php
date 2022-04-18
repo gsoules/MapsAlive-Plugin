@@ -2,18 +2,58 @@
 
 class TemplateCompiler
 {
+    const DERIVATIVE_NAME_THUMBNAIL = 'thumbnail';
+    const DERIVATIVE_NAME_FULLSIZE = 'fullsize';
+    const DERIVATIVE_NAME_ORIGINAL = 'original';
+    const FILE_PROPERTY_URL = 'url';
+    const FILE_PROPERTY_WIDTH = 'width';
+    const FILE_PROPERTY_HEIGHT = 'height';
+    const FORMAT_HTML = 'HTML';
+    const FORMAT_JSON = 'JSON';
+    const ITEM_PROPERTY_ID = 'id';
+    const ITEM_PROPERTY_URL = 'url';
     const REPEAT_START = '[--';
     const REPEAT_END = '--]';
     const SPECIFIER_START = '${';
     const SPECIFIER_END = '}';
+    const SPECIFIER_ELEMENT = 'element';
+    const SPECIFIER_FILE = 'file';
+    const SPECIFIER_ITEM = 'item';
 
+    protected $derivativeSizes = [];
+    protected $fileProperties = [];
+    protected $fileSizeCache = [];
+    protected $formats = [];
+    protected $itemProperties = [];
+    protected $specifiers = [];
     protected $templateFormat = "";
     protected $templateElementId = "";
     protected $templateName = "";
-    protected $templateRepeats = false;
     protected $templateRowNumber;
     protected $templates = [];
     protected $templatesRowNumber = 0;
+
+
+    public function __construct()
+    {
+        $this->derivativeSizes[1] = self::DERIVATIVE_NAME_THUMBNAIL;
+        $this->derivativeSizes[2] = self::DERIVATIVE_NAME_FULLSIZE;
+        $this->derivativeSizes[3] = self::DERIVATIVE_NAME_ORIGINAL;
+
+        $this->fileProperties[1] = self::FILE_PROPERTY_URL;
+        $this->fileProperties[2] = self::FILE_PROPERTY_WIDTH;
+        $this->fileProperties[3] = self::FILE_PROPERTY_HEIGHT;
+
+        $this->formats[1] = self::FORMAT_HTML;
+        $this->formats[2] = self::FORMAT_JSON;
+
+        $this->itemProperties[1] = self::ITEM_PROPERTY_ID;
+        $this->itemProperties[2] = self::ITEM_PROPERTY_URL;
+
+        $this->specifiers[1] = self::SPECIFIER_ELEMENT;
+        $this->specifiers[2] = self::SPECIFIER_FILE;
+        $this->specifiers[3] = self::SPECIFIER_ITEM;
+    }
 
     protected function compileTemplate($templateName)
     {
@@ -26,6 +66,8 @@ class TemplateCompiler
         $rows = $this->templates[$templateName]['rows'];
         foreach ($rows as $row)
         {
+            $this->templateRowNumber += 1;
+
             $repeatRow = false;
             if ($this->isRepeatDelimiterRow($row, self::REPEAT_START))
             {
@@ -52,8 +94,16 @@ class TemplateCompiler
                 $parsedRow = $this->parseTemplateRow($row, true);
             }
 
-            $this->templates[$templateName]['rows'][$this->templateRowNumber] = $parsedRow;
-            $this->templateRowNumber += 1;
+            $this->templates[$templateName]['rows'][$this->templateRowNumber - 1] = $parsedRow;
+        }
+
+        // Validate the content of JSON template.
+        if ($this->templates[$templateName]['format'] == self::FORMAT_JSON)
+        {
+            $json = implode(PHP_EOL, $rows);
+            @json_decode($json);
+            if (json_last_error() != JSON_ERROR_NONE)
+                throw new Omeka_Validate_Exception(__('Template "%s" contains invalid JSON: %s.', $templateName, json_last_error_msg()));
         }
 
         if ($this->templates[$templateName]['repeat-start'] != 0 && $this->templates[$templateName]['repeat-end'] == 0)
@@ -170,14 +220,14 @@ class TemplateCompiler
 
         $response = "";
 
-        if ($template['format'] == 'HTML')
+        if ($template['format'] == self::FORMAT_HTML)
         {
             $data = new class {};
             $data->id = "0";
             $data->html = $parsedText;
             $response = json_encode($data);
         }
-        else if ($template['format'] == 'JSON')
+        else if ($template['format'] == self::FORMAT_JSON)
         {
             $response = $parsedText;
         }
@@ -204,7 +254,7 @@ class TemplateCompiler
             $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
 
             // Escape double quotes in a JSON response.
-            if ($format == 'JSON')
+            if ($format == self::FORMAT_JSON)
                 $replacement = str_replace('"', '\\"', $replacement);
 
             // Insert the Live Data substitution into the original text.
@@ -353,14 +403,16 @@ class TemplateCompiler
         $parts = $this->parseSpecifier($specifier);
         $argsCount = count($parts);
 
-        $elementId = $parts[0];
+        $specifierKind = $parts[0];
 
-        if ($elementId == 'file-url')
+        if ($specifierKind == self::SPECIFIER_ID_FILE)
         {
             $derivativeSize = $parts[1];
 
+            $property = $parts[2];
+
             // When the item index is greater than the number of items specified, return an empty string.
-            $itemIndex = $argsCount > 2 ? $parts[2] - 1 : 0;
+            $itemIndex = $argsCount > 2 ? $parts[3] - 1 : 0;
             if ($itemIndex > count($items) - 1)
                 return "";
 
@@ -370,7 +422,7 @@ class TemplateCompiler
                 return "";
 
             // Get the file index or use 1 if no index was specified.
-            $fileIndex = $argsCount > 3 ? $parts[3] - 1 : 0;
+            $fileIndex = $argsCount > 4 ? $parts[4] - 1 : 0;
 
             // Get the URL for the specified file at the specified size. An empty string will be returned if the item
             // does not have a file attachment, or does not have as many attachments as specified by the index,
@@ -384,7 +436,25 @@ class TemplateCompiler
                     $imageUrl = AvantHybrid::getImageUrl($hybridImageRecords[0]);
             }
 
-            return $imageUrl;
+            $imageUrl = str_replace('\\', '/', $imageUrl);
+
+            if ($property == 'url')
+                return $imageUrl;
+
+            if (in_array($this->fileSizeCache, $imageUrl))
+            {
+                $imageSize = $this->fileSizeCache[$imageUrl];
+            }
+            else
+            {
+                $imageSize = @getimagesize($imageUrl);
+                $this->fileSizeCache[$imageUrl] = $imageSize;
+            }
+
+            if ($imageSize)
+                return $property == 'width' ? $imageSize[0] : $imageSize[1];
+
+            return 0;
         }
 
         // When the item index is greater than the number of items specified, return an empty string.
@@ -398,67 +468,166 @@ class TemplateCompiler
             return "";
 
         // Get the requested value.
-        if ($elementId == 'item-url')
+        if ($specifierKind == 'item-url')
             $value = WEB_ROOT . '/items/show/' . $item->id;
         else
-            $value = MapsAlive::getElementTextFromElementId($item, $elementId);
+            $value = MapsAlive::getElementTextFromElementId($item, $specifierKind);
 
         return $value;
+    }
+
+    protected function requires($values)
+    {
+        return implode(' | ', $values);
+    }
+
+    protected function translateElementSpecifier(&$args)
+    {
+        // Validate the arguments for an element name specifier and report an error if a problem is found.
+
+        $argsCount = count($args);
+
+        // Get the element Id for the element name.
+        $elementId = MapsAlive::getElementIdForElementName($args[1]);
+        if ($elementId == 0)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $args[1]));
+
+        // Replace the element name with the element Id.
+        $args[1] = $elementId;
+
+        if ($argsCount == 3)
+        {
+            $itemIndex = $args[2];
+            if (!$this->isValidIndex($itemIndex))
+                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
+        }
+
+        if ($argsCount > 3)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Element name specifier has too many arguments. The maximum is 3.'));
+    }
+
+    protected function translateFileSpecifier(&$args)
+    {
+        // Validate the arguments for a file specifier and report an error if a problem is found.
+
+        $argsCount = count($args);
+
+        if ($argsCount < 2)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('The file specifier requires a derivative size argument.'));
+
+        $derivativeSize = strtolower($args[1]);
+        if (!in_array($derivativeSize, $this->derivativeSizes))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid derivative size. Requires: %s', $args[1], $this->requires($this->derivativeSizes)));
+        $args[1] = array_keys($this->derivativeSizes, $derivativeSize)[0];
+
+        if ($argsCount < 3)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('The file specifier requires a property argument.'));
+
+        $property = strtolower($args[2]);
+        if (!in_array($property, $this->fileProperties))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file property. Requires: %s.', $args[2], $this->requires($this->fileProperties)));
+        $args[2] = array_keys($this->fileProperties, $property)[0];
+
+        if ($argsCount == 3)
+            return;
+
+        $itemIndex = strtolower($args[3]);
+        if (!$this->isValidIndex($itemIndex))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
+
+        if ($argsCount == 4)
+            return;
+
+        $fileIndex = $args[4];
+        if (!$this->isValidIndex($fileIndex))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file index. The index must be an integer >= 1', $fileIndex));
+
+        if ($argsCount > 5)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for file has too many arguments. It should have 3 to 5.'));
+    }
+
+    protected function translateItemUrlSpecifier(&$args)
+    {
+        // Validate the arguments for an item-url specifier and report an error if a problem is found.
+
+        $argsCount = count($args);
+
+        if ($argsCount < 2)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('The item specifier requires a property argument.'));
+
+        $property = strtolower($args[1]);
+        if (!in_array($property, $this->itemProperties))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item property. Requires: %s.', $args[1], $this->requires($this->itemProperties)));
+        $args[1] = array_keys($this->itemProperties, $property)[0];
+
+        if ($argsCount == 2)
+            return;
+
+        $itemIndex = $args[2];
+        if (!$this->isValidIndex($itemIndex))
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
+
+        if ($argsCount > 3)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for item-url has too many arguments. It should have 2 or 3.'));
     }
 
     protected function translateSpecifier($specifier, $compiling)
     {
         // When compiling a template, this method translate an element name within a specifier ${...} to an
         // element Id. When uncompiling, it translates an element Id to an element name. If the specifier is
-        // file-url or item-url, this method only validates the specifier, but does no translation.
+        // file or item, this method only converts specifier argument names to Ids and vice-versa.
 
         // Break the specifier into its individual arguments.
         $args = $this->parseSpecifier($specifier);
         $argsCount = count($args);
 
-        if ($argsCount == 1 && $args[0] == "")
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('No specifier provided.'));
+        if ($argsCount == 2 && $args[1] == "")
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('No specifier arguments provided.'));
 
-        $firstArg = $args[0];
+        $specifierKind = strtolower($args[0]);
 
         if ($compiling)
         {
+            if (!in_array($specifierKind, $this->specifiers))
+                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid specifier kind. Requires: %s.', $args[0], $this->requires($this->specifiers)));
+
+            // Replace the kind text with its Id.
+            $args[0] = array_keys($this->specifiers, $specifierKind)[0];
+
             // Validate that the specifier has the correct number of arguments and that they are valid.
             // If any problems are discovered, the validation method will throw a validation exception.
-            // For valid file-url and item-url specifiers, return the specifier as-is.
-            if ($firstArg == 'file-url')
-            {
-                $this->validateFileUrlSpecifier($args);
-                return $specifier;
-            }
-
-            if ($firstArg == 'item-url')
-            {
-                $this->validateItemUrlSpecifier($args);
-                return $specifier;
-            }
-
-            $this->validateElementSpecifier($args);
-
-            // Replace the element name with its element Id.
-            $elementId = MapsAlive::getElementIdForElementName($firstArg);
-            if ($elementId == 0)
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $firstArg));
-
-            $args[0] = $elementId;
+            // For valid file and item-url specifiers, return the specifier as-is.
+            if ($specifierKind == self::SPECIFIER_FILE)
+                $this->translateFileSpecifier($args);
+            else if ($specifierKind == self::SPECIFIER_ITEM)
+                $this->translateItemUrlSpecifier($args);
+            else
+                $this->translateElementSpecifier($args);
         }
         else
         {
-            if ($firstArg == 'file-url' || $firstArg == 'item-url')
-                return $specifier;
+            // Convert the specifier back into human-readable form.
 
-            // Replace the element Id with the element name.
-            $elementName = MapsAlive::getElementNameForElementId($firstArg);
-            $args[0] = $elementName;
+            if ($this->specifiers[$specifierKind] == self::SPECIFIER_ELEMENT)
+            {
+                // Replace the element Id with the element name.
+                $args[1] = MapsAlive::getElementNameForElementId($args[1]);
+            }
+            else if ($this->specifiers[$specifierKind] == self::SPECIFIER_FILE)
+            {
+                $args[1] = $this->derivativeSizes[$args[1]];
+                $args[2] = $this->fileProperties[$args[2]];
+            }
+            else if ($this->specifiers[$specifierKind] == self::SPECIFIER_ITEM)
+            {
+                $args[1] = $this->itemProperties[$args[1]];
+            }
+
+            $args[0] = $this->specifiers[$specifierKind];
         }
 
         // Reconstruct the specifier with the element name converted to an Id or vice-versa.
-        return '${' . implode(',', $args) . '}';
+        return '${' . implode(', ', $args) . '}';
     }
 
     public function unComplileTemplates($json)
@@ -494,71 +663,6 @@ class TemplateCompiler
         }
 
         return $uncompiledText;
-    }
-
-    protected function validateFileUrlSpecifier($args)
-    {
-        // Validate the arguments for a file-url specifier and report an error if a problem is found.
-
-        $argsCount = count($args);
-
-        if ($argsCount < 2)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('The file-url specifier requires a size argument.'));
-
-        $secondArg = $args[1];
-        if (!in_array($secondArg, ['thumbnail', 'fullsize', 'original']))
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file size. Use thumbnail, fullsize, or original.', $secondArg));
-
-        if ($argsCount == 2)
-            return;
-
-        $itemIndex = $args[2];
-        if (!$this->isValidIndex($itemIndex))
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
-
-        if ($argsCount == 3)
-            return;
-
-        $fileIndex = $args[3];
-        if (!$this->isValidIndex($fileIndex))
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file index. The index must be an integer >= 1', $fileIndex));
-
-        if ($argsCount > 4)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for file-url has too many arguments. It should have 2 to 4.'));
-    }
-
-    protected function validateElementSpecifier($parts)
-    {
-        // Validate the arguments for an element name specifier and report an error if a problem is found.
-
-        $argsCount = count($parts);
-
-        if ($argsCount == 2)
-        {
-            $itemIndex = $parts[1];
-            if (!$this->isValidIndex($itemIndex))
-                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
-        }
-
-        if ($argsCount > 2)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Element name specifier has too many arguments. It should have 1 or 2.'));
-    }
-
-    protected function validateItemUrlSpecifier($parts)
-    {
-        // Validate the arguments for an item-url specifier and report an error if a problem is found.
-
-        $argsCount = count($parts);
-
-        if ($argsCount == 1)
-            return;
-
-        $itemIndex = $parts[1];
-        if (!$this->isValidIndex($itemIndex))
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
-
-        if ($argsCount > 2)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for item-url has too many arguments. It should have 1 or 2.'));
     }
 
     protected function validateDefinitionName($name)

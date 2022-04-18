@@ -16,6 +16,8 @@ HTML and what content it will contain from which items on the plugin's configura
 ## Documentation
 Detailed documentation for this plugin is located at <https://digitalarchive.us/docs/plugins/mapsalive>.
 
+The MapsAlive user guide is located at <https://www.mapsalive.com/docs>
+
 ## Warning
 
 Use this software at your own risk.
