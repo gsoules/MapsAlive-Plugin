@@ -32,7 +32,7 @@ class TemplateCompiler
     protected $templateRowNumber;
     protected $templates = [];
     protected $templatesRowNumber = 0;
-
+    protected $templateHasRepeatSection = false;
 
     public function __construct()
     {
@@ -176,9 +176,9 @@ class TemplateCompiler
         return $uncompiledText;
     }
 
-    public function emitTemplateLiveData($items, $template)
+    public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems)
     {
-        $repeatCount = count($items) - 1;
+        $repeatCount = count($repeatingItems);
         $repeatStartIndex = $template['repeat-start'] - 1;
         $repeatEndIndex = $template['repeat-end'] - 1;
         $templateRepeats = $repeatStartIndex > 0 && $repeatEndIndex;
@@ -193,13 +193,18 @@ class TemplateCompiler
         // cause it to be looped over once for each item used for the repetition.
         while ($index <= $lastRowIndex)
         {
-            $repeating = $templateRepeats && $repeatCount > 0 && ($index >= $repeatStartIndex && $index <= $repeatEndIndex);
+            $withinRepeatSection = $templateRepeats && ($index >= $repeatStartIndex && $index <= $repeatEndIndex);
             $row = $rows[$index];
 
             // Discard delimiter rows.
             if ($this->isRepeatDelimiterRow($row, self::REPEAT_START) ||
                 $this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
+                $index += 1;
+            }
+            else if ($withinRepeatSection && count($repeatingItems) == 0)
+            {
+                // Handle the case where there are no repeating items by skipping rows in the repeat section.
                 $index += 1;
             }
             else
@@ -210,21 +215,21 @@ class TemplateCompiler
                 // If the template does not repeat, all of the items are made available to the template so that its
                 // specifiers can choose metadata and URL values from multiple items. In contrast, specifiers in a
                 // repeating template can only ever use one item.
-                if ($templateRepeats)
+                if ($templateRepeats && $withinRepeatSection)
                 {
-                    $itemIndex = $repeating ? count($items) - $repeatCount : 0;
-                    $itemList = [$items[$itemIndex]];
+                    $itemIndex = count($repeatingItems) - $repeatCount;
+                    $itemList = [$repeatingItems[$itemIndex]];
                 }
                 else
                 {
-                    $itemList = $items;
+                    $itemList = $nonRepeatingItems;
                 }
 
                 // Replace the row's specifiers with Live Data values.
-                $parsedText = $this->emitLiveDataIntoRow($row, $parsedText, $itemList, $template['format']);
+                 $parsedText = $this->emitLiveDataIntoRow($row, $parsedText, $itemList, $template['format']);
 
                 // Determine if/how the loop index needs to get reset to loop again over a repeating section.
-                if ($repeating && $index == $repeatEndIndex)
+                if ($withinRepeatSection && $index == $repeatEndIndex)
                 {
                     $repeatCount -= 1;
                     if ($repeatCount > 0)

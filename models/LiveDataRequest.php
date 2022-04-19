@@ -30,14 +30,21 @@ class LiveDataRequest
 
         // Create an array of Omeka items corresponding to the requested item identifiers.
         // If no item is found for an identifier, its slot in the items array will be null;
-        $items = [];
-        $identifiers = explode(',', $this->itemIdentifiers);
-        foreach ($identifiers as $identifier)
-            $items[] = MapsAlive::getItemForIdentifier($template['identifier'], $identifier);
+        $ids = explode(';', $this->itemIdentifiers);
+
+        $nonRepeatingItems = [];
+        $nonRepeatingIds = explode(',', $ids[0]);
+        foreach ($nonRepeatingIds as $id)
+            $nonRepeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+
+        $repeatingItems = [];
+        $repeatingIds = count($ids) == 1 ? [] : explode(',',  $ids[1]);
+        foreach ($repeatingIds as $id)
+            $repeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
 
         // Create the Live Data response for the requested template and items.
         $parser = new TemplateCompiler();
-        $response = $parser->emitTemplateLiveData($items, $template);
+        $response = $parser->emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems);
 
         return $response;
     }
