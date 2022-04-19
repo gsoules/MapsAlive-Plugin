@@ -90,15 +90,7 @@ class TemplateCompiler
             $this->templates[$templateName]['rows'][$this->templateRowNumber - 1] = $parsedRow;
         }
 
-        // Validate the content of JSON template.
-        $formatId = $this->templates[$templateName]['format'];
-        if ($this->formats[$formatId] == self::FORMAT_JSON)
-        {
-            $json = implode(PHP_EOL, $rows);
-            @json_decode($json);
-            if (json_last_error() != JSON_ERROR_NONE)
-                throw new Omeka_Validate_Exception(__('Template "%s" contains invalid JSON: %s.', $templateName, json_last_error_msg()));
-        }
+        $this->validateTemplateContent($templateName, $rows);
 
         if ($this->templates[$templateName]['repeat-start'] != 0 && $this->templates[$templateName]['repeat-end'] == 0)
             throw new Omeka_Validate_Exception(__('Template "%s" has a repeat start line but no repeat end line.', $templateName));
@@ -146,6 +138,42 @@ class TemplateCompiler
 
         // Create a JSON array of templates to be stored in the database.
         return json_encode($this->templates);
+    }
+
+    public function decomplileTemplates($json)
+    {
+        // Make sure the compiled templates are valid JSON. They should be except sometimes during development.
+        $this->templates = json_decode($json, true);
+        if ($this->templates == null)
+            return "";
+
+        $uncompiledText = "";
+
+        // Loop over each template object and create a template definition followed by the template's content.
+        foreach ($this->templates as $templateName => $template)
+        {
+            // Insert a blank line before each template definition except for the first one.
+            if (strlen($uncompiledText) > 0)
+                $uncompiledText .= PHP_EOL . PHP_EOL;
+
+            // Get the template's identifier element name from its element Id.
+            $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
+
+            // Form the template definition line.
+            $formatId = $this->formats[$template['format']];
+            $uncompiledText .= "Template: $templateName, $elementName, $formatId";
+
+            // Uncompile the template rows by converting specifier element Ids to element names.
+            $rows = $template['rows'];
+            foreach ($rows as $row)
+            {
+                $compiling = false;
+                $parsedRow = $this->parseTemplateRow($row, $compiling);
+                $uncompiledText .= PHP_EOL . $parsedRow;
+            }
+        }
+
+        return $uncompiledText;
     }
 
     public function emitTemplateLiveData($items, $template)
@@ -283,7 +311,7 @@ class TemplateCompiler
 
     protected function isRepeatDelimiterRow($row, $delimiter)
     {
-         return substr(ltrim($row), 0, strlen($delimiter)) == $delimiter;
+         return trim($row) == $delimiter;
     }
 
     protected function isTemplateDefinitionRow($row)
@@ -638,45 +666,27 @@ class TemplateCompiler
         return '${' . implode(', ', $args) . '}';
     }
 
-    public function unComplileTemplates($json)
-    {
-        // Make sure the compiled templates are valid JSON.
-        $this->templates = json_decode($json, true);
-        if ($this->templates == null)
-            return "";
-
-        $uncompiledText = "";
-
-        // Loop over each template object and create a template definition followed by the template's content.
-        foreach ($this->templates as $templateName => $template)
-        {
-            // Insert a blank line before each template definition except for the first one.
-            if (strlen($uncompiledText) > 0)
-                $uncompiledText .= PHP_EOL . PHP_EOL;
-
-            // Get the template's identifier element name from its element Id.
-            $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
-
-            // Form the template definition line.
-            $formatId = $this->formats[$template['format']];
-            $uncompiledText .= "Template: $templateName, $elementName, $formatId";
-
-            // Uncompile the template rows by converting specifier element Ids to element names.
-            $rows = $template['rows'];
-            foreach ($rows as $row)
-            {
-                $compiling = false;
-                $parsedRow = $this->parseTemplateRow($row, $compiling);
-                $uncompiledText .= PHP_EOL . $parsedRow;
-            }
-        }
-
-        return $uncompiledText;
-    }
-
     protected function validateDefinitionName($name)
     {
         $result = preg_match('/^[a-zA-Z0-9_]+$/', $name);
         return $result === 1;
+    }
+
+    protected function validateTemplateContent($templateName, $rows)
+    {
+        $formatId = $this->templates[$templateName]['format'];
+        if ($this->formats[$formatId] == self::FORMAT_JSON)
+        {
+            $content = implode(PHP_EOL, $rows);
+
+            // Remove the repeat row delimeters since they are not valid JSON syntax.
+            $json = str_replace(self::REPEAT_START, '', $content);
+            $json = str_replace(self::REPEAT_END, '', $json);
+
+            @json_decode($json);
+            if (json_last_error() != JSON_ERROR_NONE)
+                throw new Omeka_Validate_Exception(__('Template "%s" contains invalid JSON: %s.', $templateName, json_last_error_msg()));
+        }
+
     }
 }

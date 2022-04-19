@@ -16,7 +16,7 @@ class MapsAliveConfig
         {
             $raw = get_option(self::OPTION_TEMPLATES);
             $compiler = new TemplateCompiler();
-            $text = $compiler->unComplileTemplates($raw);
+            $text = $compiler->decomplileTemplates($raw);
         }
 
         return $text;
