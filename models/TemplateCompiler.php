@@ -72,14 +72,14 @@ class TemplateCompiler
             {
                 if ($this->templates[$templateName]['repeat-start'] != 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has more than one repeat start line.', $templateName));
-                $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 2;
+                $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 1;
                 $parsedRow = $row;
             }
             else if ($this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
                 if ($this->templates[$templateName]['repeat-start'] == 0)
                     throw new Omeka_Validate_Exception(__('Template "%s" has a repeat end line but no start line.', $templateName));
-                $this->templates[$templateName]['repeat-end'] = $this->templateRowNumber;
+                $this->templates[$templateName]['repeat-end'] = $this->templateRowNumber - 1;
                 $parsedRow = $row;
             }
             else
