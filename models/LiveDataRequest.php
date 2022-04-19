@@ -35,12 +35,20 @@ class LiveDataRequest
         $nonRepeatingItems = [];
         $nonRepeatingIds = explode(',', $ids[0]);
         foreach ($nonRepeatingIds as $id)
+        {
+            if (trim($id) == "")
+                continue;
             $nonRepeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+        }
 
         $repeatingItems = [];
         $repeatingIds = count($ids) == 1 || $ids[1] == "" ? [] : explode(',',  $ids[1]);
         foreach ($repeatingIds as $id)
+        {
+            if (trim($id) == "")
+                continue;
             $repeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+        }
 
         // Create the Live Data response for the requested template and items.
         $parser = new TemplateCompiler();
