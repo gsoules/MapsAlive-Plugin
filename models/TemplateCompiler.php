@@ -20,6 +20,7 @@ class TemplateCompiler
     const SPECIFIER_FILE = 'file';
     const SPECIFIER_ITEM = 'item';
 
+    protected $compilingRepeatSection = false;
     protected $derivativeSizes = [];
     protected $fileProperties = [];
     protected $fileSizeCache = [];
@@ -32,7 +33,6 @@ class TemplateCompiler
     protected $templateRowNumber;
     protected $templates = [];
     protected $templatesRowNumber = 0;
-    protected $templateHasRepeatSection = false;
 
     public function __construct()
     {
@@ -60,6 +60,7 @@ class TemplateCompiler
         // Initialize class variables used to keep track of which template and which row is being parsed.
         $this->templateName = $templateName;
         $this->templateRowNumber = 0;
+        $this->compilingRepeatSection = false;
 
         // Process each template row to validate its specifiers and to translate element names to element Ids.
         // Keep track of the row number solely for the purpose of reporting validation errors.
@@ -74,6 +75,7 @@ class TemplateCompiler
                     throw new Omeka_Validate_Exception(__('Template "%s" has more than one repeat start line.', $templateName));
                 $this->templates[$templateName]['repeat-start'] = $this->templateRowNumber + 1;
                 $parsedRow = $row;
+                $this->compilingRepeatSection = true;
             }
             else if ($this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
@@ -81,6 +83,7 @@ class TemplateCompiler
                     throw new Omeka_Validate_Exception(__('Template "%s" has a repeat end line but no start line.', $templateName));
                 $this->templates[$templateName]['repeat-end'] = $this->templateRowNumber - 1;
                 $parsedRow = $row;
+                $this->compilingRepeatSection = false;
             }
             else
             {
@@ -368,6 +371,9 @@ class TemplateCompiler
 
     protected function isValidIndex($value)
     {
+        if ($this->compilingRepeatSection)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('An item index is not allow within a repeat section'));
+
         if (!is_numeric($value))
             return false;
         return intval($value) >= 1;
