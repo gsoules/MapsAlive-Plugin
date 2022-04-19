@@ -38,7 +38,7 @@ class LiveDataRequest
             $nonRepeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
 
         $repeatingItems = [];
-        $repeatingIds = count($ids) == 1 ? [] : explode(',',  $ids[1]);
+        $repeatingIds = count($ids) == 1 || $ids[1] == "" ? [] : explode(',',  $ids[1]);
         foreach ($repeatingIds as $id)
             $repeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
 

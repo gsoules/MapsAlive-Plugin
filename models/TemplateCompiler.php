@@ -178,7 +178,7 @@ class TemplateCompiler
 
     public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems)
     {
-        $repeatCount = count($repeatingItems);
+        $repeatsRemaining = count($repeatingItems);
         $repeatStartIndex = $template['repeat-start'] - 1;
         $repeatEndIndex = $template['repeat-end'] - 1;
         $templateRepeats = $repeatStartIndex > 0 && $repeatEndIndex;
@@ -196,32 +196,28 @@ class TemplateCompiler
             $withinRepeatSection = $templateRepeats && ($index >= $repeatStartIndex && $index <= $repeatEndIndex);
             $row = $rows[$index];
 
-            // Discard delimiter rows.
-            if ($this->isRepeatDelimiterRow($row, self::REPEAT_START) ||
-                $this->isRepeatDelimiterRow($row, self::REPEAT_END))
+            if ($this->isRepeatDelimiterRow($row, self::REPEAT_START) || $this->isRepeatDelimiterRow($row, self::REPEAT_END))
             {
+                // Skip past delimiter rows.
                 $index += 1;
             }
             else if ($withinRepeatSection && count($repeatingItems) == 0)
             {
-                // Handle the case where there are no repeating items by skipping rows in the repeat section.
+                // Skip past rows in the repeat section when there are no repeating items.
                 $index += 1;
             }
             else
             {
-                // Determine which item(s) to use for obtaining Live Data. When a template repeats, the first items
-                // passed in $items is used for the non-repeating part of the template (the rows before and after
-                // the repeating section) and the rest of the items are used one at a time for the repeating section.
-                // If the template does not repeat, all of the items are made available to the template so that its
-                // specifiers can choose metadata and URL values from multiple items. In contrast, specifiers in a
-                // repeating template can only ever use one item.
                 if ($templateRepeats && $withinRepeatSection)
                 {
-                    $itemIndex = count($repeatingItems) - $repeatCount;
+                    // Get the next repeating item starting with index 0 until there are none left.
+                    // Set the item list to be just that one item.
+                    $itemIndex = count($repeatingItems) - $repeatsRemaining;
                     $itemList = [$repeatingItems[$itemIndex]];
                 }
                 else
                 {
+                    // Set the item list to be all of the repeating items.
                     $itemList = $nonRepeatingItems;
                 }
 
@@ -231,11 +227,11 @@ class TemplateCompiler
                 // Determine if/how the loop index needs to get reset to loop again over a repeating section.
                 if ($withinRepeatSection && $index == $repeatEndIndex)
                 {
-                    $repeatCount -= 1;
-                    if ($repeatCount > 0)
-                        $index = $repeatStartIndex;
-                    else
-                        $index = $repeatEndIndex + 1;
+                    // The index is at the end of the repeat section. If there are more repeats to perform,
+                    // reset the index back to the first row in the repeat section, otherwise set it to
+                    // the first row after the repeat section
+                    $repeatsRemaining -= 1;
+                    $index = $repeatsRemaining > 0 ? $repeatStartIndex : $repeatEndIndex + 1;
                 }
                 else
                 {
@@ -249,6 +245,8 @@ class TemplateCompiler
         $format = $this->formats[$template['format']];
         if ($format == self::FORMAT_HTML)
         {
+            // Create a JSON object in the form that MapsAlive expects in response to a Live Data request.
+            // The object contains the HTML from the HTML template. Then encode the object as JSON text.
             $data = new class {};
             $data->id = "0";
             $data->html = $parsedText;
@@ -256,6 +254,7 @@ class TemplateCompiler
         }
         else if ($format == self::FORMAT_JSON)
         {
+            // Return the JSON template's text.
             $response = $parsedText;
         }
 
