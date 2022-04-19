@@ -5,6 +5,7 @@ class TemplateCompiler
     const DERIVATIVE_NAME_THUMBNAIL = 'thumbnail';
     const DERIVATIVE_NAME_FULLSIZE = 'fullsize';
     const DERIVATIVE_NAME_ORIGINAL = 'original';
+    const FILE_PROPERTY_IMG = 'img';
     const FILE_PROPERTY_URL = 'url';
     const FILE_PROPERTY_WIDTH = 'width';
     const FILE_PROPERTY_HEIGHT = 'height';
@@ -43,6 +44,7 @@ class TemplateCompiler
         $this->fileProperties[1] = self::FILE_PROPERTY_URL;
         $this->fileProperties[2] = self::FILE_PROPERTY_WIDTH;
         $this->fileProperties[3] = self::FILE_PROPERTY_HEIGHT;
+        $this->fileProperties[4] = self::FILE_PROPERTY_IMG;
 
         $this->formats[1] = self::FORMAT_HTML;
         $this->formats[2] = self::FORMAT_JSON;
@@ -177,6 +179,20 @@ class TemplateCompiler
         }
 
         return $uncompiledText;
+    }
+
+    protected function getImageSize($imageUrl)
+    {
+        if (in_array($imageUrl, $this->fileSizeCache))
+        {
+            $imageSize = $this->fileSizeCache[$imageUrl];
+        }
+        else
+        {
+            $imageSize = @getimagesize($imageUrl);
+            $this->fileSizeCache[$imageUrl] = $imageSize;
+        }
+        return $imageSize;
     }
 
     public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems)
@@ -450,6 +466,7 @@ class TemplateCompiler
         // or its a hybrid image e.g. exported from PastPerfect.
         $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
 
+        // Users of the AvantHybrid plugin may have their images hosted elsewhere so request the URL from that plugin.
         if (!$imageUrl && plugin_is_active('AvantHybrid'))
         {
             $hybridImageRecords = AvantHybrid::getImageRecords($item->id);
@@ -457,25 +474,37 @@ class TemplateCompiler
                 $imageUrl = AvantHybrid::getImageUrl($hybridImageRecords[0]);
         }
 
+        // Get rid of any backslashes so they don't have to be escaped for JSON.
         $imageUrl = str_replace('\\', '/', $imageUrl);
 
+        // When the property is "url" return the image URL.
         $property = $args[2];
         if ($this->fileProperties[$property] == self::FILE_PROPERTY_URL)
             return $imageUrl;
 
-        if (in_array($imageUrl, $this->fileSizeCache))
+        // The remaining properties "img", "width", and "height" will all need the image size.
+        $imageSize = $this->getImageSize($imageUrl);
+
+        // When the property is "img" construct an <img> tag.
+        if ($this->fileProperties[$property] == self::FILE_PROPERTY_IMG)
         {
-            $imageSize = $this->fileSizeCache[$imageUrl];
-        }
-        else
-        {
-            $imageSize = @getimagesize($imageUrl);
-            $this->fileSizeCache[$imageUrl] = $imageSize;
+            $img = "<img src='$imageUrl'";
+            if ($imageSize)
+                $img .= " width='$imageSize[0]' height='$imageSize[1]'";
+            $img .= ">";
+            return $img;
         }
 
+        // When the property is "width" or "height" return the dimension.
         if ($imageSize)
-            return $this->fileProperties[$property] == self::FILE_PROPERTY_WIDTH ? $imageSize[0] : $imageSize[1];
+        {
+            if ($this->fileProperties[$property] == self::FILE_PROPERTY_WIDTH)
+                return $imageSize[0];
+            if ($this->fileProperties[$property] == self::FILE_PROPERTY_HEIGHT)
+                return $imageSize[1];
+        }
 
+        // The size should only be empty for some hybrid images where the image host did not provide the size.
         return 0;
     }
 
