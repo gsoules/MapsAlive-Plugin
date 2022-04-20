@@ -170,7 +170,8 @@ class TemplateCompiler
             $rows = $template['rows'];
             foreach ($rows as $row)
             {
-                if ($row == "")
+                $row = str_replace("\r", '', $row);
+                if (trim($row) == "")
                     continue;
                 $compiling = false;
                 $parsedRow = $this->parseTemplateRow($row, $compiling);
