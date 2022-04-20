@@ -17,6 +17,7 @@ class TemplateCompiler
     const REPEAT_END = '--]';
     const SPECIFIER_START = '${';
     const SPECIFIER_END = '}';
+    const SPECIFIER_DATA = 'data';
     const SPECIFIER_ELEMENT = 'element';
     const SPECIFIER_FILE = 'file';
     const SPECIFIER_ITEM = 'item';
@@ -55,6 +56,7 @@ class TemplateCompiler
         $this->specifiers[1] = self::SPECIFIER_ELEMENT;
         $this->specifiers[2] = self::SPECIFIER_FILE;
         $this->specifiers[3] = self::SPECIFIER_ITEM;
+        $this->specifiers[4] = self::SPECIFIER_DATA;
     }
 
     protected function compileTemplate($templateName)
@@ -111,10 +113,6 @@ class TemplateCompiler
         foreach ($rows as $row)
         {
             $this->templatesRowNumber += 1;
-
-            // Skip blank rows.
-            if (trim($row) == "")
-                continue;
 
             // Start creating a new template if this row specifies "Template: <template-name>".
             if ($this->isTemplateDefinitionRow($row))
@@ -181,21 +179,7 @@ class TemplateCompiler
         return $uncompiledText;
     }
 
-    protected function getImageSize($imageUrl)
-    {
-        if (in_array($imageUrl, $this->fileSizeCache))
-        {
-            $imageSize = $this->fileSizeCache[$imageUrl];
-        }
-        else
-        {
-            $imageSize = @getimagesize($imageUrl);
-            $this->fileSizeCache[$imageUrl] = $imageSize;
-        }
-        return $imageSize;
-    }
-
-    public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems)
+    public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems, $data)
     {
         $repeatsRemaining = count($repeatingItems);
         $repeatStartIndex = $template['repeat-start'] - 1;
@@ -241,7 +225,7 @@ class TemplateCompiler
                 }
 
                 // Replace the row's specifiers with Live Data values.
-                 $parsedText = $this->emitLiveDataIntoRow($row, $parsedText, $itemList, $template['format']);
+                 $parsedText = $this->emitLiveDataIntoRow($row, $parsedText, $itemList, $template['format'], $data);
 
                 // Determine if/how the loop index needs to get reset to loop again over a repeating section.
                 if ($withinRepeatSection && $index == $repeatEndIndex)
@@ -280,7 +264,7 @@ class TemplateCompiler
         return $response;
     }
 
-    protected function emitLiveDataIntoRow($row, string $parsedText, $itemList, $format): string
+    protected function emitLiveDataIntoRow($row, string $parsedText, $itemList, $format, $data): string
     {
         // Replace each specifier in the text with its Live Data value.
         $remainingText = $row;
@@ -296,7 +280,7 @@ class TemplateCompiler
             $specifier = $token['specifier'];
 
             // Replace the specifier with a Live Data value.
-            $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier);
+            $replacement = $this->replaceSpecifierWithLiveData($itemList, $specifier, $data);
 
             // Escape double quotes in a JSON response.
             if ($this->formats[$format] == self::FORMAT_JSON)
@@ -314,6 +298,20 @@ class TemplateCompiler
     protected function errorPrefix()
     {
         return __('Error on line %s of template "%s": ', $this->templateRowNumber, $this->templateName);
+    }
+
+    protected function getImageSize($imageUrl)
+    {
+        if (in_array($imageUrl, $this->fileSizeCache))
+        {
+            $imageSize = $this->fileSizeCache[$imageUrl];
+        }
+        else
+        {
+            $imageSize = @getimagesize($imageUrl);
+            $this->fileSizeCache[$imageUrl] = $imageSize;
+        }
+        return $imageSize;
     }
 
     protected function getSpecifierToken($text)
@@ -444,6 +442,17 @@ class TemplateCompiler
         return $parsedText;
     }
 
+    protected function replaceDataSpecifierWithLiveData(array $args, int $argsCount, $data)
+    {
+        // Get data file index or use 1 if no index was specified.
+        $dataIndex = $argsCount > 1 ? $args[1] - 1 : 0;
+
+        if ($dataIndex <= count($data) - 1)
+            return $data[$dataIndex];
+
+        return "";
+    }
+
     protected function replaceFileSpecifierWithLiveData(array $args, int $argsCount, $items)
     {
         $derivativeSize = $this->derivativeSizes[$args[1]];
@@ -508,7 +517,7 @@ class TemplateCompiler
         return 0;
     }
 
-    protected function replaceSpecifierWithLiveData($items, $specifier)
+    protected function replaceSpecifierWithLiveData($items, $specifier, $data)
     {
         // This method replaces a specifier with a data value in response to a Live Data request.
 
@@ -549,11 +558,32 @@ class TemplateCompiler
             $value = MapsAlive::getElementTextFromElementId($item, $args[1]);
             return $value;
         }
+
+        if ($this->specifiers[$specifierKind] == self::SPECIFIER_DATA)
+        {
+            return $this->replaceDataSpecifierWithLiveData($args, $argsCount, $data);
+        }
     }
 
     protected function requires($values)
     {
         return implode(' | ', $values);
+    }
+
+    protected function translateDataSpecifier(&$args)
+    {
+        $argsCount = count($args);
+
+        if ($argsCount == 2)
+        {
+            $dataIndex = $args[1];
+            if (!$this->isValidIndex($dataIndex))
+                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid data index. The index must be an integer >= 1', $dataIndex));
+        }
+
+        if ($argsCount > 2)
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Data specifier has too many arguments. It should have 1 or 2.'));
+
     }
 
     protected function translateElementSpecifier(&$args)
@@ -578,7 +608,7 @@ class TemplateCompiler
         }
 
         if ($argsCount > 3)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Element name specifier has too many arguments. The maximum is 3.'));
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Element specifier has too many arguments. The maximum is 3.'));
     }
 
     protected function translateFileSpecifier(&$args)
@@ -618,10 +648,10 @@ class TemplateCompiler
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid file index. The index must be an integer >= 1', $fileIndex));
 
         if ($argsCount > 5)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for file has too many arguments. It should have 3 to 5.'));
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('File specifier has too many arguments. It should have 3 to 5.'));
     }
 
-    protected function translateItemUrlSpecifier(&$args)
+    protected function translateItemSpecifier(&$args)
     {
         // Validate the arguments for an item-url specifier and report an error if a problem is found.
 
@@ -643,7 +673,7 @@ class TemplateCompiler
             throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not a valid item index. The index must be an integer >= 1', $itemIndex));
 
         if ($argsCount > 3)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Specifier for item-url has too many arguments. It should have 2 or 3.'));
+            throw new Omeka_Validate_Exception($this->errorPrefix() . __('Item specifier has too many arguments. It should have 2 or 3.'));
     }
 
     protected function translateSpecifier($specifier, $compiling)
@@ -654,10 +684,6 @@ class TemplateCompiler
 
         // Break the specifier into its individual arguments.
         $args = $this->parseSpecifier($specifier);
-        $argsCount = count($args);
-
-        if ($argsCount == 2 && $args[1] == "")
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('No specifier arguments provided.'));
 
         $specifierKind = strtolower($args[0]);
 
@@ -675,9 +701,11 @@ class TemplateCompiler
             if ($specifierKind == self::SPECIFIER_FILE)
                 $this->translateFileSpecifier($args);
             else if ($specifierKind == self::SPECIFIER_ITEM)
-                $this->translateItemUrlSpecifier($args);
-            else
+                $this->translateItemSpecifier($args);
+            else if  ($specifierKind == self::SPECIFIER_ELEMENT)
                 $this->translateElementSpecifier($args);
+            else if  ($specifierKind == self::SPECIFIER_DATA)
+                $this->translateDataSpecifier($args);
         }
         else
         {
