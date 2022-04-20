@@ -170,6 +170,8 @@ class TemplateCompiler
             $rows = $template['rows'];
             foreach ($rows as $row)
             {
+                if ($row == "")
+                    continue;
                 $compiling = false;
                 $parsedRow = $this->parseTemplateRow($row, $compiling);
                 $uncompiledText .= PHP_EOL . $parsedRow;
@@ -251,7 +253,6 @@ class TemplateCompiler
             // Create a JSON object in the form that MapsAlive expects in response to a Live Data request.
             // The object contains the HTML from the HTML template. Then encode the object as JSON text.
             $data = new class {};
-            $data->id = "0";
             $data->html = $parsedText;
             $response = json_encode($data);
         }
