@@ -13,6 +13,7 @@ class TemplateCompiler
     const FORMAT_JSON = 'JSON';
     const ITEM_PROPERTY_ID = 'id';
     const ITEM_PROPERTY_URL = 'url';
+    const OMEKA_ID = 'omeka_id';
     const REPEAT_START = '[--';
     const REPEAT_END = '--]';
     const SPECIFIER_START = '${';
@@ -160,7 +161,11 @@ class TemplateCompiler
                 $uncompiledText .= PHP_EOL . PHP_EOL;
 
             // Get the template's identifier element name from its element Id.
-            $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
+            $elementIdentifierId = $template['identifier'];
+            if ($elementIdentifierId == 0)
+                $elementName = self::OMEKA_ID;
+            else
+                $elementName = MapsAlive::getElementNameForElementId($template['identifier']);
 
             // Form the template definition line.
             $formatId = $this->formats[$template['format']];
@@ -370,10 +375,17 @@ class TemplateCompiler
         if ($index !== false)
             $this->templateName = substr($this->templateName, 0, $index);
 
-        $elementName = $args[1];
-        $this->templateElementId = MapsAlive::getElementIdForElementName($elementName);
-        if ($this->templateElementId == 0)
-            throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $elementName));
+        $identifierElementName = $args[1];
+        if ($identifierElementName == self::OMEKA_ID)
+        {
+            $this->templateElementId = 0;
+        }
+        else
+        {
+            $this->templateElementId = MapsAlive::getElementIdForElementName($identifierElementName);
+            if ($this->templateElementId == 0)
+                throw new Omeka_Validate_Exception($this->errorPrefix() . __('"%s" is not an element.', $identifierElementName));
+        }
 
         $this->templateFormat = strtoupper($args[2]);
         if ($this->templateFormat != "HTML" && $this->templateFormat != "JSON")

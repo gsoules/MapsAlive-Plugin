@@ -59,6 +59,13 @@ class MapsAlive
 
     public static function getItemForIdentifier($elementId, $identifier)
     {
+        if ($elementId == 0)
+        {
+            // An element Id of 0 means that the item identifier is the Omeka item Id.
+            $item = get_record_by_id('item', $identifier);
+            return $item;
+        }
+
         $params = array(
             'search' => '',
             'advanced' => array(
