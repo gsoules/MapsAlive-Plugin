@@ -513,7 +513,7 @@ class TemplateCompiler
         {
             $img = "<img src='$imageUrl'";
             if ($imageSize)
-                $img .= " width='$imageSize[0]' height='$imageSize[1]'";
+                $img .= " width='$imageSize[0]' height='$imageSize[1]' style='max-width:100%; height:auto;'";
             $img .= ">";
             return $img;
         }
