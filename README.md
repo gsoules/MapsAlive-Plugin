@@ -1,8 +1,8 @@
 # MapsAlive (plugin for Omeka Classic)
 
-The MapsAlive plugin lets you display your Omeka content (metadata and images) on an interactive map that was
-created with [MapsAlive](https://www.mapsalive.com). MapsAlive is a web application that lets you create
-interactive maps, diagrams, and images online.
+The [MapsAlive plugin](https://digitalarchive.us/docs/plugins/mapsalive) lets you display your Omeka content (metadata and images) on an interactive map that was
+created with [MapsAlive](https://www.mapsalive.com) interactive map software. MapsAlive is a web application that lets
+you make any image interactive.
 
 The MapsAlive plugins works by letting your Omeka installation act as a
 [MapsAlive Live Data](https://www.mapsalive.com/docs/livedata-intro/) server that provides the interactive map
