@@ -36,6 +36,7 @@ class TemplateCompiler
     protected $templateRowNumber;
     protected $templates = [];
     protected $templatesRowNumber = 0;
+    protected $showWarnings = 0;
 
     public function __construct()
     {
@@ -187,8 +188,10 @@ class TemplateCompiler
         return $uncompiledText;
     }
 
-    public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems, $data)
+    public function emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems, $data, $showWarnings)
     {
+        $this->showWarnings = $showWarnings;
+
         $repeatsRemaining = count($repeatingItems);
         $repeatStartIndex = $template['repeat-start'] - 1;
         $repeatEndIndex = $template['repeat-end'] - 1;
@@ -476,10 +479,12 @@ class TemplateCompiler
         if ($itemIndex > count($items) - 1)
             return "";
 
+        $property = $args[2];
+
         // Get the specified item.
-        $item = $items[$itemIndex];
+        $item = $items[$itemIndex]['item'];
         if ($item == null)
-            return "";
+            return $this->valueForBadItem($items, $itemIndex);
 
         // Get the file index or use 1 if no index was specified.
         $fileIndex = $argsCount > 4 ? $args[4] - 1 : 0;
@@ -501,7 +506,6 @@ class TemplateCompiler
         $imageUrl = str_replace('\\', '/', $imageUrl);
 
         // When the property is "url" return the image URL.
-        $property = $args[2];
         if ($this->fileProperties[$property] == self::FILE_PROPERTY_URL)
             return $imageUrl;
 
@@ -551,9 +555,9 @@ class TemplateCompiler
             return "";
 
         // Get the item identified by the specifier's item index. Return empty string if there's no item for the index.
-        $item = $items[$itemIndex];
+        $item = $items[$itemIndex]['item'];
         if ($item == null)
-            return "";
+            return $this->valueForBadItem($items, $itemIndex);
 
         // Get the requested value.
         if ($this->specifiers[$specifierKind] == self::SPECIFIER_ITEM)
@@ -768,6 +772,11 @@ class TemplateCompiler
             if (json_last_error() != JSON_ERROR_NONE)
                 throw new Omeka_Validate_Exception(__('Template "%s" contains invalid JSON: %s.', $templateName, json_last_error_msg()));
         }
+    }
 
+    protected function valueForBadItem($items, $itemIndex)
+    {
+        $badItemId = $items[$itemIndex]['id'];
+        return $this->showWarnings ? "[ITEM $badItemId NOT FOUND]" : "";
     }
 }

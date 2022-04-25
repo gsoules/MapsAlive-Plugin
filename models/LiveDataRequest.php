@@ -7,6 +7,7 @@ class LiveDataRequest
     protected $data = "";
     protected $itemIdentifiers = "";
     protected $templateName = "";
+    protected $showWarnings = 0;
 
     public function errorResponse($errorMessage)
     {
@@ -33,23 +34,25 @@ class LiveDataRequest
         $ids = explode(';', $this->itemIdentifiers);
 
         $nonRepeatingItems = [];
-        $nonRepeatingIds = explode(',', $ids[0]);
-        foreach ($nonRepeatingIds as $id)
+        $this->nonRepeatingIds = explode(',', $ids[0]);
+        foreach ($this->nonRepeatingIds as $id)
         {
             $id = trim($id);
             if ($id == "" || $id == "0")
                 continue;
-            $nonRepeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+            $item = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+            $nonRepeatingItems[] = array('item' => $item, 'id' => $id);
         }
 
         $repeatingItems = [];
-        $repeatingIds = count($ids) == 1 || $ids[1] == "" ? [] : explode(',',  $ids[1]);
-        foreach ($repeatingIds as $id)
+        $this->repeatingIds = count($ids) == 1 || $ids[1] == "" ? [] : explode(',',  $ids[1]);
+        foreach ($this->repeatingIds as $id)
         {
             $id = trim($id);
             if (trim($id) == "")
                 continue;
-            $repeatingItems[] = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+            $item = MapsAlive::getItemForIdentifier($template['identifier'], $id);
+            $repeatingItems[] = array('item' => $item, 'id' => $id);
         }
 
         $data = [];
@@ -58,7 +61,7 @@ class LiveDataRequest
 
         // Create the Live Data response for the requested template and items.
         $parser = new TemplateCompiler();
-        $response = $parser->emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems, $data);
+        $response = $parser->emitTemplateLiveData($template, $nonRepeatingItems, $repeatingItems, $data, $this->showWarnings);
 
         return $response;
     }
@@ -79,6 +82,8 @@ class LiveDataRequest
             return "No template name provided";
 
         $this->data = isset($_GET['data']) ? $_GET['data'] : "";
+
+        $this->showWarnings = isset($_GET['warnings']) ? strtolower($_GET['warnings']) == "on" : false;
 
         $raw =  get_option(MapsAliveConfig::OPTION_TEMPLATES);
         $this->templates = json_decode($raw, true);
