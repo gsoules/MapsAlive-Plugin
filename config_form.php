@@ -13,8 +13,7 @@ $templatesRows = max(2, count(explode(PHP_EOL, $templates)));
     <div class="two columns alpha">
         <label>Templates</label>
     </div>
-    <div class="inputs five columns omega">
-        <p class="explanation"><?php echo __("Templates for MapsAlive Live Data"); ?></p>
+    <div>
         <?php echo $view->formTextarea(MapsAliveConfig::OPTION_TEMPLATES, $templates, array('rows' => $templatesRows)); ?>
     </div>
 </div>
