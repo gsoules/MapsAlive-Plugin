@@ -36,24 +36,39 @@ class MapsAlive
         return $asHtml ? html_escape($text) : $text;
     }
 
-    public static function getItemFileUrl($item, $derivativeSize, $fileIndex)
+    public static function getItemFileUrl($item, $derivativeSize, $fileIndex, $fileProperty)
     {
-        $url = '';
         $file = $item->getFile($fileIndex);
-        if (!empty($file) && $file->hasThumbnail())
+        if (empty($file))
+            return "";
+
+        if ($derivativeSize == "original")
         {
-            $url = $file->getWebPath($derivativeSize);
-
-            $supportedImageMimeTypes = self::supportedImageMimeTypes();
-
-            if (!in_array($file->mime_type, $supportedImageMimeTypes))
+            if ($fileProperty === TemplateCompiler::FILE_PROPERTY_IMG &&
+                !in_array($file->mime_type, array('image/jpg', 'image/jpeg', 'image/png')))
             {
-                // The original image is not a jpg (it's probably a pdf) in which case return a smaller size.
-                if ($derivativeSize === "original")
+                // The specifier is for the original image, but the original file is not an image.
+                // It could be a PDF, audio, or video file.
+                if ($file->hasThumbnail())
+                {
+                    // Return the derivative image, which for a PDF would be an image of the PDF file's first page.
                     $derivativeSize = "fullsize";
-                $url = $file->getWebPath($derivativeSize);
+                }
+                else
+                {
+                    // There's no image for this file.
+                    return "";
+                }
             }
         }
+        else if (!$file->hasThumbnail())
+        {
+            // There's no fullsize or thumbnail image for this file.
+            return "";
+        }
+
+        $url = $file->getWebPath($derivativeSize);
+
         return $url;
     }
 
@@ -81,14 +96,5 @@ class MapsAlive
 
         // Return the first or only item resulting from the search.
         return $records[0];
-    }
-
-    public static function supportedImageMimeTypes()
-    {
-        return array(
-            'image/jpg',
-            'image/jpeg',
-            'image/png'
-        );
     }
 }

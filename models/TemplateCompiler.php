@@ -492,7 +492,7 @@ class TemplateCompiler
         // Get the URL for the specified file at the specified size. An empty string will be returned if the item
         // does not have a file attachment, or does not have as many attachments as specified by the index,
         // or its a hybrid image e.g. exported from PastPerfect.
-        $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex);
+        $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex, $this->fileProperties[$property]);
 
         // Users of the AvantHybrid plugin may have their images hosted elsewhere so request the URL from that plugin.
         if (!$imageUrl && plugin_is_active('AvantHybrid'))
@@ -515,6 +515,12 @@ class TemplateCompiler
         // When the property is "img" construct an <img> tag.
         if ($this->fileProperties[$property] == self::FILE_PROPERTY_IMG)
         {
+            if (!$imageUrl && $this->showWarnings)
+            {
+                $badItemId = $items[$itemIndex]['id'];
+                return $this->showWarnings ? __("[FILE FOR ITEM %s HAS NO URL]", $badItemId) : "";
+            }
+
             $img = "<img src='$imageUrl'";
             if ($imageSize)
                 $img .= " width='$imageSize[0]' height='$imageSize[1]' style='max-width:100%; height:auto; vertical-align:middle;'";
