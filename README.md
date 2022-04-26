@@ -5,13 +5,18 @@ created with [MapsAlive](https://www.mapsalive.com) interactive map software. Ma
 you make any image interactive.
 
 The MapsAlive plugins works by letting your Omeka installation act as a
-[MapsAlive Live Data](https://www.mapsalive.com/docs/livedata-intro/) server that provides the interactive map
-with metadata and images from your Omeka items in real time. This way you don't have to copy the data into the
-map, and if you update an item in Omeka, the change will automatically be reflected on the interactive map.
+[MapsAlive Live Data](https://www.mapsalive.com/docs/livedata-intro/) server that responds to map requests for
+metadata and images from your Omeka items. With this solution, any changes you make to your Omeka items are 
+automatically reflected on your interactive map.
 
-The plugin lets you specify the HTML that the map will use to display the data when someone clicks on or touches
-a hotspot on the map. The HTML can contain Omeka content from one item or from multiple items. You specify the
-HTML and what content it will contain from which items on the plugin's configuration page.
+The plugin lets you specify the HTML that the map will use to display information from your Omeka items. The map
+displays the information when someone mouses over, clicks, or touches a hotspot on the map. The HTML can contain 
+Omeka content from one item or from multiple items. You specify the HTML as a template on the plugin's configuration page.
+
+## Installation
+1. Unzip the release file into your Omeka installation's plugins directory.
+2. Rename the folder to `MapsAlive`.
+3. Activate the plugin from the Admin → Settings → Plugins page.
 
 ## Documentation
 Detailed documentation for this plugin is located at <https://digitalarchive.us/docs/plugins/mapsalive>.
