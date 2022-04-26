@@ -544,6 +544,11 @@ class TemplateCompiler
 
         $specifierKind = $args[0];
 
+        if ($this->specifiers[$specifierKind] == self::SPECIFIER_DATA)
+        {
+            return $this->replaceDataSpecifierWithLiveData($args, $argsCount, $data);
+        }
+
         if ($this->specifiers[$specifierKind] == self::SPECIFIER_FILE)
         {
             return $this->replaceFileSpecifierWithLiveData($args, $argsCount, $items);
@@ -575,11 +580,6 @@ class TemplateCompiler
         {
             $value = MapsAlive::getElementTextFromElementId($item, $args[1]);
             return $value;
-        }
-
-        if ($this->specifiers[$specifierKind] == self::SPECIFIER_DATA)
-        {
-            return $this->replaceDataSpecifierWithLiveData($args, $argsCount, $data);
         }
     }
 
@@ -777,6 +777,6 @@ class TemplateCompiler
     protected function valueForBadItem($items, $itemIndex)
     {
         $badItemId = $items[$itemIndex]['id'];
-        return $this->showWarnings ? "[ITEM $badItemId NOT FOUND]" : "";
+        return $this->showWarnings ? __("[ITEM %s NOT FOUND]", $badItemId) : "";
     }
 }

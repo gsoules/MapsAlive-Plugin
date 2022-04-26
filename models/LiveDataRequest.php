@@ -83,7 +83,7 @@ class LiveDataRequest
 
         $this->data = isset($_GET['data']) ? $_GET['data'] : "";
 
-        $this->showWarnings = isset($_GET['warnings']) ? strtolower($_GET['warnings']) == "on" : false;
+        $this->showWarnings = isset($_GET['warnings']) ? strtolower($_GET['warnings']) != "off" : true;
 
         $raw =  get_option(MapsAliveConfig::OPTION_TEMPLATES);
         $this->templates = json_decode($raw, true);
