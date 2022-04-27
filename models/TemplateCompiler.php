@@ -515,7 +515,7 @@ class TemplateCompiler
         // When the property is "img" construct an <img> tag.
         if ($this->fileProperties[$property] == self::FILE_PROPERTY_IMG)
         {
-            if (!$imageUrl && $this->showWarnings)
+            if (!$imageUrl)
             {
                 $badItemId = $items[$itemIndex]['id'];
                 return $this->showWarnings ? __("[FILE FOR ITEM %s HAS NO URL]", $badItemId) : "";
