@@ -15,8 +15,8 @@ Omeka content from one item or from multiple items. You specify the HTML as a te
 
 ## Installation
 1. Unzip the release file into your Omeka installation's plugins directory.
-2. Rename the folder to `MapsAlive`.
-3. Activate the plugin from the Admin → Settings → Plugins page.
+2. Rename the folder to "MapsAlive".
+3. Activate the plugin on the Plugins page.
 
 ## Documentation
 Detailed documentation for this plugin is located at <https://digitalarchive.us/docs/plugins/mapsalive>.
