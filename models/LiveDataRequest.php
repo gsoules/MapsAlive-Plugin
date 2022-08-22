@@ -17,6 +17,23 @@ class LiveDataRequest
         return $response;
     }
 
+    public function handleFindRequest($results)
+    {
+        $json = "[";
+        $index = 1;
+        foreach ($results as $result)
+        {
+            if ($index > 1)
+                $json .= ",";
+            $identifier = ItemMetadata::getItemIdentifier($result);
+            $json .= $identifier;
+            $index += 1;
+        }
+
+        $json .= "]";
+        return $json;
+    }
+
     public function handleLiveDataRequest()
     {
         // Validate the request arguments.
