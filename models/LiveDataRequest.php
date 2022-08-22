@@ -19,19 +19,15 @@ class LiveDataRequest
 
     public function handleFindRequest($results)
     {
-        $json = "[";
-        $index = 1;
+        $identifiers = [];
+
+        // Create an array of the Identifiers for the results of the find request.
         foreach ($results as $result)
         {
-            if ($index > 1)
-                $json .= ",";
-            $identifier = ItemMetadata::getItemIdentifier($result);
-            $json .= $identifier;
-            $index += 1;
+            $identifiers[] = ItemMetadata::getItemIdentifier($result);
         }
 
-        $json .= "]";
-        return $json;
+        return json_encode($identifiers);
     }
 
     public function handleLiveDataRequest()

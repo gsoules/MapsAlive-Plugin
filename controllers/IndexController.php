@@ -10,18 +10,25 @@ class MapsAlive_IndexController extends Omeka_Controller_AbstractActionControlle
 
     public function findAction()
     {
-        $this->performQueryUsingSql();
         $this->emitHeaders();
+
+        // Perform a SQL query using the query string arguments. The query returns all the matching items.
+        $this->performQueryUsingSql();
+
+        // Create JSON text for an array of the item Identifiers for the matching items.
         $request = new LiveDataRequest();
         $response = $request->handleFindRequest($this->records);
+
         $this->view->response = $response;
     }
 
     public function livedataAction()
     {
         $this->emitHeaders();
+
         $request = new LiveDataRequest();
         $response = $request->handleLiveDataRequest();
+
         $this->view->response = $response;
     }
 
