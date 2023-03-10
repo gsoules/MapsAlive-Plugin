@@ -493,6 +493,8 @@ class TemplateCompiler
         // does not have a file attachment, or does not have as many attachments as specified by the index,
         // or its a hybrid image e.g. exported from PastPerfect.
         $imageUrl = MapsAlive::getItemFileUrl($item, $derivativeSize, $fileIndex, $this->fileProperties[$property]);
+        if (empty($imageUrl))
+            return "";
 
         // Users of the AvantHybrid plugin may have their images hosted elsewhere so request the URL from that plugin.
         if (!$imageUrl && plugin_is_active('AvantHybrid'))
